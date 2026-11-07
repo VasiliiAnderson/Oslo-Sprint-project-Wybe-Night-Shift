@@ -57,6 +57,7 @@ class World:
         self.observed: dict[str, dict[str, float]] = {}  # sted -> utganger slik roboten så dem
         self.mismatch = 0
         self.dead: set[str] = set()  # steder vi ikke kom til (finnes kanskje ikke)
+        self.looked_at: dict[str, int] = {}  # sted -> spilltid (sek) for siste look der
         if use_prior and PRIOR_MAP.exists():
             self._load_prior()
 
@@ -137,6 +138,8 @@ class World:
                 if "wet" in str(e.get("warning", "")):
                     self.note_wet(e["to"], t)
         self.seen.add(loc)
+        if t:
+            self.looked_at[loc] = t
         if res.get("floor") is not None:
             self.floors[loc] = res["floor"]
         if not self.is_room(loc):
