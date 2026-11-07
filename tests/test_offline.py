@@ -105,6 +105,29 @@ def test_waiting_lost_wakes_when_seen():
     assert not r.waiting and planner.choose_next([r], a.w, "lobby") is r
 
 
+def test_owned_tray_and_luggage():
+    names = ["luggage-205", "luggage-205-36", "tray-104"]
+    r35 = msg("Take the bags at the desk up to 205. The room is empty.", "R-035")
+    r36 = msg("Take the bags at the desk up to 205. The room is empty.", "R-036")
+    assert Agent.owned_object(("luggage",), r35, names) == "luggage-205"
+    assert Agent.owned_object(("luggage",), r36, names) == "luggage-205-36"
+    t54 = msg("Bring the tray from the kitchen pass to 104.", "R-054")
+    assert Agent.owned_object(("tray",), t54, ["tray-104-7"]) is None, "brettet hører til R-007"
+    assert Agent.owned_object(("tray",), t54, ["tray-104", "tray-104-54"]) == "tray-104-54"
+
+
+def test_end_of_night_charging():
+    a = Agent.__new__(Agent)
+    a.clock = "01:00:00"
+    assert a.battery_limits() == (25.0, 60.0), "midt på natta: som før"
+    a.clock = "05:30:00"
+    low, target = a.battery_limits()
+    assert low < 25 and target < 30, (low, target)
+    a.clock = "05:59:00"
+    low, target = a.battery_limits()
+    assert low < 8 and target < 14, (low, target)
+
+
 def test_spill_timing():
     assert clock_sec("23:59:59") < clock_sec("00:00:01") < clock_sec("05:59:00")
     w = World()

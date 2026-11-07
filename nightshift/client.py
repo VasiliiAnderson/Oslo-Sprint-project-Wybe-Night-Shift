@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOG_DIR = Path(os.getenv("NIGHTSHIFT_LOG_DIR") or Path(__file__).resolve().parent.parent / "logs")
 
 
 class SharedRateLimiter:
