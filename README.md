@@ -5,7 +5,8 @@ AI-agent som styrer en hotellrobot på nattskift. Se [docs/PLAN.md](docs/PLAN.md
 ## Kom i gang
 
 ```bash
-pip install -r requirements.txt
+uv venv .venv
+uv pip install -p .venv -r requirements.txt
 cp .env.example .env   # fyll inn NIGHTSHIFT_KEY
-python -m nightshift.explore
+uv run python -m nightshift.explore   # bruker .venv automatisk, ingen aktivering nødvendig
 ```
