@@ -58,6 +58,8 @@ class World:
         self.mismatch = 0
         self.dead: set[str] = set()  # steder vi ikke kom til (finnes kanskje ikke)
         self.looked_at: dict[str, int] = {}  # sted -> spilltid (sek) for siste look der
+        self.covered_at: dict[str, int] = {}  # gang -> når vi satte skilt over sølet
+        self.reused: set[str] = set()  # ganger der vi flyttet skiltet til et nytt søl
         if use_prior and PRIOR_MAP.exists():
             self._load_prior()
 

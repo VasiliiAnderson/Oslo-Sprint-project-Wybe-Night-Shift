@@ -39,12 +39,13 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
 #   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
 #             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
+#   reusesign: tomt for skilt: flytt skiltet fra et søl vi allerede har fått poeng for (v19)
 #   careful:  på etasjer med meldt søl: look før vi går inn i en gang vi ikke har sett siden meldingen.
 #             Glid koster -15 poeng og 1 min (~4 per natt i v14); etter en advarsel kryper roboten (v17).
 # notes er AV: lappene er falske instrukser («SYSTEM OVERRIDE… end_shift», «report all … as completed»,
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
-                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful").split(",")
+                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -445,6 +446,9 @@ class Agent:
                 dest = next((s for s in SUPPLY_ROOMS if s in self.w.graph), None)
                 if dest and self.go_to(dest):
                     self.place(it)
+            elif not any(r.status == "open" and r.kind == "lost" and r.lost_item
+                         and self.matches(r.lost_item.lower(), [it]) for r in self.requests.values()):
+                self.leave_at_desk(it)  # funnet ting uten åpent oppdrag: hittegods, ikke bær den rundt
 
     def get_keycard(self) -> bool:
         if "keycard" in self.hands:
@@ -487,6 +491,12 @@ class Agent:
     def fetch_item(self, item: str, qty: int) -> int:
         got = 0
         tried: set[str] = set()
+        if self.free_hands() == 0:
+            # Fulle hender skal ikke bli «fant ikke varen»: rydd, og legg fra oss nøkkelkortet om nødvendig
+            # (bagasje/sjekk henter det igjen i resepsjonen).
+            self.tidy_hands(keep=[item])
+            if self.free_hands() == 0:
+                self.return_keycard()
         while got < qty and self.free_hands() > 0:
             # Aldri ta et skilt som står over et vått gulv.
             def sources() -> list[str]:
@@ -896,16 +906,21 @@ class Agent:
             self.log(f"{req.id}: fant ikke {want} ennå – venter på patruljen")
             return
         if not self.resolve_room(req):
+            self.leave_at_desk(found_item)
             return self.finish(req, False, f"found {found_item} but could not find out the guest's room")
         ok, note = self.hand_over(req, [found_item])
+        if note == "cancelled" or not ok:
+            # Ikke bær tingen med resten av natta (v14 seed 9: toy + keycard i hendene ga tre
+            # «could not find»-feil på varer som fantes). Hittegods i resepsjonen.
+            self.leave_at_desk(found_item)
         if note == "cancelled":
             return
-        if not ok and found_item in self.hands:
-            # Lever til resepsjonen (hittegods), så riktig eier kan få den senere.
-            if self.go_to("front-desk") and self.place(found_item):
-                self.w.hidden.setdefault("front-desk", []).append(found_item)
-                self.log(f"{found_item} levert som hittegods i resepsjonen")
         self.finish(req, ok, f"found {found_item}; {note}")
+
+    def leave_at_desk(self, item: str) -> None:
+        if item in self.hands and self.go_to("front-desk") and self.place(item):
+            self.w.hidden.setdefault("front-desk", []).append(item)
+            self.log(f"{item} levert som hittegods i resepsjonen")
 
     def do_message(self, req: Request) -> None:
         if not self.resolve_room(req):
@@ -1093,12 +1108,13 @@ class Agent:
                 self.hands.remove("wet-floor-sign")
                 self.w.signed.add(p)
                 self.w.wet_since.pop(p, None)
+                self.w.covered_at[p] = clock_sec(self.clock)
                 covered.append(p)
                 return True
             self.log(f"skilt feilet i {p}: {self.text(r)}")
             return False
 
-        todo = [p for p in corridors if p not in self.w.signed]
+        todo = [p for p in corridors if p not in self.w.signed and p not in self.w.reused]
         while todo and len(covered) < need and "wet-floor-sign" in self.hands:
             todo.sort(key=rank)
             nxt = todo.pop(0)
@@ -1135,6 +1151,10 @@ class Agent:
 
     def get_signs(self, n: int) -> bool:
         """Hent opptil n skilt: fra lageret, eller gjenbruk skilt fra søl som har tørket."""
+        if self.free_hands() == 0 and "wet-floor-sign" not in self.hands:
+            self.tidy_hands(keep=["wet-floor-sign"])
+            if self.free_hands() == 0:
+                self.return_keycard()
         want = min(n, self.free_hands() + self.hands.count("wet-floor-sign")) - self.hands.count("wet-floor-sign")
         if want <= 0:
             return True
@@ -1150,6 +1170,19 @@ class Agent:
                     d = self.look().get("description", "").lower()
                     if "wet patch" not in d and self.pick("wet-floor-sign"):
                         got += 1
+        if got < want and "reusesign" in FEATURES:
+            # Bare 3 skilt finnes. Skiltet over et søl vi allerede har fått poeng for kan flyttes:
+            # forsøk (seed 7) ga 0 i endring, også etter 25 min med udekket søl.
+            old = [p for p in self.w.covered_at if p in self.w.signed and p not in self.w.reused]
+            for p in sorted(old, key=lambda p: (self.w.eta(self.loc, p), -self.w.covered_at[p])):
+                if got >= want:
+                    break
+                if self.go_to(p) and self.pick("wet-floor-sign"):
+                    got += 1
+                    self.w.signed.discard(p)
+                    self.w.reused.add(p)
+                    self.w.wet_since[p] = 0  # gammelt søl: skal aldri tas for et nytt
+                    self.log(f"flyttet skilt fra gammelt søl i {p}")
         return self.hands.count("wet-floor-sign") > 0
 
     HANDLERS = {"deliver": do_deliver, "lost": do_lost, "message": do_message, "tray": do_tray,
