@@ -96,16 +96,18 @@ class Runner:
 
     def start_new(self, n: int, seeds: list[int | None]) -> list[str]:
         ids: list[str] = []
+        # Finalen: gi aldri opp et skift etter et halvt minutt (f.eks. startet noen sekunder før 12:00).
+        attempts = 40 if self.mode == "final" else 5
         for i in range(n):
             seed = seeds[i] if i < len(seeds) else None
-            for attempt in range(5):
+            for attempt in range(attempts):
                 sid, why = self.start_one(seed)
                 if sid:
                     ids.append(sid)
                     print(f"startet skift {i + 1}/{n}: {sid} (seed {seed})", flush=True)
                     break
-                print(f"kunne ikke starte skift {i + 1}: {why} – prøver igjen", flush=True)
-                time.sleep(3 + attempt * 3)
+                print(f"kunne ikke starte skift {i + 1}: {why} – prøver igjen ({attempt + 1}/{attempts})", flush=True)
+                time.sleep(min(3 + attempt * 3, 15))
             self.save_index(ids)
         return ids
 
