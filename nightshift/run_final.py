@@ -113,7 +113,8 @@ class Runner:
         for attempt in range(3):  # start på nytt fra lagret tilstand hvis noe uventet krasjer
             try:
                 client = NightShiftClient(shift=shift, session_name=f"{self.mode}-{shift}")
-                agent = Agent(client, World(), verbose=False)
+                # NIGHTSHIFT_NO_PRIOR=1: start uten lagret kart (robusthetstest for ukjente hoteller i finalen)
+                agent = Agent(client, World(use_prior=os.getenv("NIGHTSHIFT_NO_PRIOR") != "1"), verbose=False)
                 agent.state_path = LOG_DIR / f"state-{shift}.json"
                 agent.load_state()
                 with self.lock:

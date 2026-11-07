@@ -265,17 +265,24 @@ def choose_next(requests: list[Request], world, here: str, now: str | None = Non
     from .world import clock_sec
     now_s = clock_sec(now) if now else None
 
+    unknown_hotel = not getattr(world, "known_hotel", True)
+
+    def eta(a: str, b: str) -> float:
+        v = world.eta(a, b)
+        # Ukjent hotell: steder vi ikke har funnet ennå får et anslag, ikke «uendelig langt unna».
+        return 200.0 if unknown_hotel and v >= 9999 else v
+
     def est(r: Request) -> float:
         dst = world.corridor_for(r.room) if r.room else None
-        t = world.eta(here, dst) if dst else 150.0
+        t = eta(here, dst) if dst else 150.0
         if r.kind == "deliver":
             srcs = [s for i in r.items for s in world.item_locations(i)]
             if srcs:
-                src = min(srcs, key=lambda s: world.eta(here, s))
-                t = world.eta(here, src) + (world.eta(src, dst) if dst else 150)
+                src = min(srcs, key=lambda s: eta(here, s))
+                t = eta(here, src) + (eta(src, dst) if dst else 150)
         elif r.kind in ("tray", "luggage"):
             src = "kitchen-pass" if r.kind == "tray" else "front-desk"
-            t = world.eta(here, src) + (world.eta(src, dst) if dst else 150) + 60
+            t = eta(here, src) + (eta(src, dst) if dst else 150) + 60
         elif r.kind == "lost":
             t = 300.0
         elif r.kind == "spill":
@@ -283,7 +290,7 @@ def choose_next(requests: list[Request], world, here: str, now: str | None = Non
         elif r.kind == "followup":
             return 0.0  # avgjøres uten å flytte seg
         if r.guest and not r.room:
-            t += world.eta(here, "front-desk") + 30
+            t += eta(here, "front-desk") + 30
         return t + 30
 
     def priority(r: Request) -> float:

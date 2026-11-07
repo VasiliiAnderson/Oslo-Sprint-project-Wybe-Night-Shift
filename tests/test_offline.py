@@ -171,6 +171,105 @@ def test_spill_timing():
     assert w.spill_is_new("corridor-3a", since) is None
 
 
+class FakeHotel:
+    """Et lite hotell agenten ikke kjenner (andre navn enn lagret kart), for å teste utforsking."""
+
+    def __init__(self) -> None:
+        self.t = 22 * 3600
+        self.at = "charging-dock"
+        self.called: str | None = None
+        self.calls: list[str] = []
+        self.E: dict[str, dict[str, int]] = {}
+        for a, b, m in (("charging-dock", "lobby", 9), ("lobby", "elevator-1", 6), ("lobby", "hall-1a", 10),
+                        ("hall-1a", "storage", 4), ("hall-1a", "room-101", 3), ("hall-1a", "stairwell-1", 8),
+                        ("stairwell-1", "stairwell-2", 19), ("stairwell-2", "corridor-2y", 6),
+                        ("elevator-2", "corridor-2x", 7), ("corridor-2x", "corridor-2y", 12),
+                        ("corridor-2y", "room-205", 3), ("corridor-2x", "room-201", 3)):
+            self.E.setdefault(a, {})[b] = m
+            self.E.setdefault(b, {})[a] = m
+        self.floor = {p: 2 if p in ("elevator-2", "corridor-2x", "corridor-2y", "stairwell-2") or
+                      p.startswith("room-2") else 1 for p in self.E}
+        self.objects = {"storage": ["towel x5"]}
+
+    def call(self, cmd: str, **args):
+        self.calls.append(cmd)
+        ok, res = True, ""
+        if cmd == "look":
+            res = {"location": self.at, "floor": self.floor[self.at], "description": "A place.",
+                   "exits": [{"to": n, "metres": m} for n, m in self.E[self.at].items()],
+                   "objects": list(self.objects.get(self.at, [])), "people": []}
+            self.t += 5
+        elif cmd == "move":
+            to = args["to"]
+            if to in self.E[self.at] and not to.startswith("room-"):
+                self.t += self.E[self.at][to]
+                self.at = to
+                res = {"at": to}
+            elif self.at.startswith("elevator") and to == self.called:
+                self.t += 30
+                self.at, self.called = to, None
+                res = {"at": to}
+            else:
+                ok, res = False, "You can't get there from here."
+        elif cmd == "call_elevator":
+            dest = f"elevator-{args['floor']}"
+            if self.at.startswith("elevator") and dest in self.E:
+                self.called = dest
+                res = f"Ding. The doors open. Step in to {dest} to ride to floor {args['floor']}."
+            else:
+                ok, res = False, "Nothing happens."
+        elif cmd == "pick":
+            objs = self.objects.get(self.at, [])
+            if objs and objs[0].startswith(args["item"]):
+                res = f"Picked up {args['item']}, in hand."
+            else:
+                ok, res = False, "There is no such thing here."
+        elif cmd == "status":
+            res = {"location": self.at, "battery": 90.0, "hands": [], "cart": None, "docked": False,
+                   "score": 0, "unread_messages": 0}
+        elif cmd == "navigate":
+            ok, res = False, "Unknown place."
+        h, rest = divmod(self.t % 86400, 3600)
+        return {"ok": ok, "clock": f"{h:02d}:{rest // 60:02d}:{rest % 60:02d}", "result": res,
+                "events": [], "note": None}
+
+
+def test_unknown_hotel_detected():
+    w = World()
+    assert w.known_hotel
+    lobby = ("charging-dock", "front-desk", "lobby-bar", "elevator-1", "corridor-1a")
+    w.observe_look({"location": "lobby", "floor": 1, "exits": [{"to": n, "metres": 7} for n in lobby]}, 1)
+    assert w.known_hotel, "samme struktur som lagret kart (avstander kan variere)"
+    w.observe_look({"location": "lobby", "floor": 1,
+                    "exits": [{"to": "charging-dock", "metres": 9}, {"to": "hall-1a", "metres": 10}]}, 2)
+    assert not w.known_hotel
+    assert "corridor-2b" not in w.graph, "lagret kart skal forkastes i et ukjent hotell"
+    assert set(w.graph["lobby"]) == {"charging-dock", "hall-1a"}
+
+
+def test_explore_unknown_hotel():
+    from nightshift import agent as agent_mod
+    saved = set(agent_mod.FEATURES)
+    try:
+        agent_mod.FEATURES.add("explore")
+        hotel = FakeHotel()
+        a = Agent(hotel, World(use_prior=False), verbose=False)
+        a.look()
+        assert not a.w.known_hotel
+        assert a.find_room("room-205") == "corridor-2y" and hotel.at == "corridor-2y", hotel.at
+        assert "call_elevator" in hotel.calls, "ukjent etasje: tilkall heisen"
+        assert a.find_room("room-201") == "corridor-2x"
+        assert a.go_to("charging-dock") and hotel.at == "charging-dock"
+        assert a.fetch_item("towel", 1) == 1 and hotel.at == "storage", "lageret skal letes opp"
+        # Kjent hotell: ingen utforsking (samme oppførsel som før v16).
+        agent_mod.FEATURES.discard("explore")
+        b = Agent(FakeHotel(), World(use_prior=False), verbose=False)
+        b.look()
+        assert b.find_room("room-205") is None
+    finally:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:
