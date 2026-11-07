@@ -5,6 +5,7 @@ Se docs/API.md for alle observerte meldingstyper og poeng.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -336,6 +337,10 @@ def value_at(kind: str, age_min: float) -> float:
     return pts[-1][1]
 
 
+# Samme bryter som i agent.FEATURES (agent importerer planner, ikke omvendt). Standard: på.
+FLAT_DELIVER = "flatdeliver" in {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "flatdeliver").split(",")}
+
+
 def choose_next(requests: list[Request], world, here: str, now: str | None = None) -> Request | None:
     """Velg oppdraget med best verdi per sekund, der verdien regnes ved FERDIG tid (den synker med
     alderen), pluss det oppdraget taper hvis det må vente ~10 min til (haster nær 15-min-kanten)."""
@@ -380,7 +385,8 @@ def choose_next(requests: list[Request], world, here: str, now: str | None = Non
             return r.value / (secs + 1)
         age = max(0.0, (now_s - clock_sec(r.at)) / 60)
         done_at = age + secs / 60
-        mult = max(1, sum(r.items.values())) if r.kind == "deliver" else 1
+        # To ting i samme leveranse gir like mye som én (målt: 25,4 mot 26,7 poeng ferskt, n=1211).
+        mult = max(1, sum(r.items.values())) if r.kind == "deliver" and not FLAT_DELIVER else 1
         v = value_at(r.kind, done_at) * mult
         loss_if_wait = (value_at(r.kind, done_at) - value_at(r.kind, done_at + 10)) * mult
         return (v + loss_if_wait) / (secs + 1)

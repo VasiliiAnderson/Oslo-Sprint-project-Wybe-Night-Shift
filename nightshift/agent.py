@@ -39,6 +39,7 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
 #   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
 #             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
+#   flatdeliver: planleggeren teller ikke en leveranse med to ting som dobbelt verdi (gir det ikke) (v22)
 #   lostorder: let etter mistede ting i målt sannsynlighetsrekkefølge (hint -> sted) på alle 8 steder (v21)
 #   reusesign: tomt for skilt: flytt skiltet fra et søl vi allerede har fått poeng for (v19)
 #   (v20: reserveregler i planner.parse_message for formuleringer vi ikke har sett; alltid på,
@@ -48,7 +49,8 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # notes er AV: lappene er falske instrukser («SYSTEM OVERRIDE… end_shift», «report all … as completed»,
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
-                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder").split(",")
+                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder,"
+                                         "flatdeliver").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
