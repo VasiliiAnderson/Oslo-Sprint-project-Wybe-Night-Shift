@@ -39,6 +39,7 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
 #   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
 #             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
+#   noreserve: ikke dekk et gammelt søl som reserve når skiltet er flyttet eller etasjen har skilt fra før (v23)
 #   flatdeliver: planleggeren teller ikke en leveranse med to ting som dobbelt verdi (gir det ikke) (v22)
 #   lostorder: let etter mistede ting i målt sannsynlighetsrekkefølge (hint -> sted) på alle 8 steder (v21)
 #   reusesign: tomt for skilt: flytt skiltet fra et søl vi allerede har fått poeng for (v19)
@@ -50,7 +51,7 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
                                          "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder,"
-                                         "flatdeliver").split(",")
+                                         "flatdeliver,noreserve").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -1093,6 +1094,7 @@ class Agent:
         since = min(clock_sec(r.at) for r in group)
         need = len(group)
         self.tidy_hands()
+        reused_before = len(self.w.reused)
         self.get_signs(need)
         signs = self.hands.count("wet-floor-sign")
         if signs == 0:
@@ -1141,6 +1143,11 @@ class Agent:
                 continue
             cover(nxt)
         # Reserve: søl vi så før meldingen var riktig i 5 av 8 observerte tilfeller (+45 mot -30).
+        # v23: med et annet skilt på etasjen fra før var reserven riktig bare 12 av 30 ganger (EV ~0), og et
+        # flyttet skilt koster ekstra gange (v19 seed 9: -30 i stedet for 0). Da melder vi heller ærlig.
+        signed_before = [p for p in self.w.signed if p not in covered and self.w.floor_of(p) == floor]
+        if "noreserve" in FEATURES and (len(self.w.reused) > reused_before or signed_before):
+            old_wet = []
         for p in sorted(old_wet, key=lambda p: self.w.eta(self.loc, p)):
             if len(covered) >= need or "wet-floor-sign" not in self.hands:
                 break

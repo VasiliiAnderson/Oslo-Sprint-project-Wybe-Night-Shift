@@ -221,7 +221,7 @@ class Runner:
                 if why != waiting_msg:
                     print(f"[{datetime.now():%H:%M:%S}] venter på ledig plass: {why}", flush=True)
                     waiting_msg = why
-                time.sleep(20)
+                time.sleep(5)  # ledig plass: prøv ofte (køen kan overlappe forrige versjon)
                 continue
             if time.time() - last_print > 60:
                 self.print_table(list(active))

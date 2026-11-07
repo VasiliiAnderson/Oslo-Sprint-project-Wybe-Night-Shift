@@ -23,15 +23,32 @@ load_dotenv()
 LOG_DIR = Path(os.getenv("NIGHTSHIFT_LOG_DIR") or Path(__file__).resolve().parent.parent / "logs")
 
 
+def _rate_env(name: str, default: float) -> float:
+    try:
+        v = float(os.getenv(name) or default)
+    except ValueError:
+        return default
+    return v if v > 0 else default
+
+
+# Målt 7. nov (~100 000 kall): grensen gjelder hele nøkkelen (alle skift samlet), ikke hvert skift.
+# Under 20 kall/s totalt nesten aldri 429, under 1 % ved 20–29, ~5 % over 30.
+MAX_RATE = _rate_env("NIGHTSHIFT_MAX_RATE", 22.0)  # kall/s for hele prosessen
+# Kall/s per skift (0 = av). Brukes når flere prosesser kjører samtidig (f.eks. to versjoner side om side):
+# 4 plasser x 5,5 holder totalen under grensen uansett hvordan skiftene er fordelt på prosessene.
+SHIFT_RATE = _rate_env("NIGHTSHIFT_SHIFT_RATE", 0.0)
+
+
 class SharedRateLimiter:
     """Én fartsgrense for ALLE skift i prosessen (finalen kjører 10 samtidig på samme nøkkel).
 
     Serveren svarer 429 «Too many requests. Slow down.» når vi går for fort. Vi tilpasser
-    oss: lengre pause etter 429, litt kortere etter hvert vellykket kall (AIMD).
+    oss: litt lengre pause etter 429, litt kortere etter hvert vellykket kall, men aldri over
+    MAX_RATE. (Før: x1,6 og lang pause per 429, så snittet ble ~16 kall/s selv om serveren tåler ~25.)
     """
 
-    def __init__(self, interval: float = 0.06, lo: float = 0.03, hi: float = 2.0) -> None:
-        self.interval, self.lo, self.hi = interval, lo, hi
+    def __init__(self, interval: float = 1 / 16, lo: float = 1 / MAX_RATE, hi: float = 2.0) -> None:
+        self.interval, self.lo, self.hi = max(interval, lo), lo, hi
         self._next = 0.0
         self._lock = threading.Lock()
         self.hits_429 = 0
@@ -46,13 +63,13 @@ class SharedRateLimiter:
 
     def ok(self) -> None:
         with self._lock:
-            self.interval = max(self.lo, self.interval * 0.995)
+            self.interval = max(self.lo, self.interval * 0.99)
 
     def too_fast(self) -> None:
         with self._lock:
             self.hits_429 += 1
-            self.interval = min(self.hi, self.interval * 1.6 + 0.02)
-            self._next = time.monotonic() + self.interval * 4
+            self.interval = min(self.hi, self.interval * 1.3 + 0.005)
+            self._next = time.monotonic() + self.interval * 3
 
 
 RATE = SharedRateLimiter()
@@ -65,11 +82,13 @@ class NightShiftClient:
         key: str | None = None,
         shift: str | None = None,
         session_name: str | None = None,
-        min_interval: float = 0.0,  # i tillegg til den felles grensen RATE
+        min_interval: float | None = None,  # i tillegg til den felles grensen RATE (standard: SHIFT_RATE)
         max_retries: int = 10,
     ) -> None:
         self.url = url or os.getenv("NIGHTSHIFT_URL", "https://nightshift.wybe.me/")
         self.key = key or os.getenv("NIGHTSHIFT_KEY", "")
+        if min_interval is None:
+            min_interval = 1 / SHIFT_RATE if SHIFT_RATE else 0.0
         self.min_interval = min_interval
         self.max_retries = max_retries
         self._last_call = 0.0
