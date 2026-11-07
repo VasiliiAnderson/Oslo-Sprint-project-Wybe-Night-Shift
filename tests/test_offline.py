@@ -324,6 +324,37 @@ def test_full_hands_do_not_block_fetching():
     assert "keycard" in a.hands, "nøkkelkortet beholdes når en hånd ble ledig uten det"
 
 
+def test_reuse_sign_from_credited_spill():
+    from nightshift import agent as agent_mod
+
+    class Stub(Agent):
+        def go_to(self, target):
+            self.loc = target
+            return True
+
+        def pick(self, item):
+            self.hands.append(item)
+            return True
+
+        def look(self):
+            return {}
+
+    saved = set(agent_mod.FEATURES)
+    try:
+        agent_mod.FEATURES.add("reusesign")
+        a = Stub.__new__(Stub)
+        a.w = World()
+        a.w.objects["storage"] = ["towel x8"]  # ingen skilt igjen på lageret
+        a.w.signed.add("corridor-1b")
+        a.w.covered_at["corridor-1b"] = clock_sec("23:00:00")
+        a.loc, a.hands, a.cart, a.verbose, a.requests = "lobby", [], None, False, {}
+        assert a.get_signs(1) and a.hands == ["wet-floor-sign"]
+        assert "corridor-1b" in a.w.reused and "corridor-1b" not in a.w.signed
+        assert a.w.spill_is_new("corridor-1b", clock_sec("01:00:00")) is False, "gammelt søl, aldri et nytt"
+    finally:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:
