@@ -51,6 +51,8 @@ class World:
         self.wet_since: dict[str, int] = {}
         self.dry_at: dict[str, int] = {}
         self.signed: set[str] = set()
+        if use_prior and PRIOR_MAP.exists():
+            self._load_prior()
 
     def note_wet(self, place: str, t: int) -> None:
         if place not in self.signed:
@@ -79,8 +81,6 @@ class World:
         if self.dry_at.get(place, -1) >= since - 60:
             return True
         return None
-        if use_prior and PRIOR_MAP.exists():
-            self._load_prior()
 
     # ---------- oppdatering ----------
     def _load_prior(self) -> None:
