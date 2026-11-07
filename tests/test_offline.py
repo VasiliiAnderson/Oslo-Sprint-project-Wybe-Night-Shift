@@ -384,6 +384,15 @@ def test_parser_unseen_phrasings():
     assert not same_item("phone-charger", "phone") and same_item("towel", "towel")
 
 
+def test_lost_order_by_measured_odds():
+    w = World()
+    for hint, first in (("somewhere around the lobby", "lobby"), ("the lobby bar", "lobby-bar"),
+                        ("the laundry", "laundry"), ("the front desk", "front-desk")):
+        order = planner.lost_order(hint, "lobby", w.eta)
+        assert order[0] == first and sorted(order) == sorted(planner.LOST_PLACES), (hint, order)
+    assert "kitchen-pass" in planner.lost_order("the kitchen pass", "corridor-1c", w.eta)[:1]
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:
