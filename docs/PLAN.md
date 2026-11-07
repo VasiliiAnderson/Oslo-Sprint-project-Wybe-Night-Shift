@@ -116,3 +116,19 @@ Disse vinner både uavgjort og 1 000 kr-prisen:
 ## Første steg ved godkjenning
 Lagre denne planen som `docs/PLAN.md` i repoet, opprett `.gitignore` (`.env`, `logs/`) og
 skjelettet over, og start fase 1.
+
+---
+
+## Iterasjonsløkke (fra 7. nov)
+Målet er finalens tall: snitt uten dårligste skift, på seeder vi ikke har justert på.
+
+1. **Kjør** en runde på samme seeder: `python -m nightshift.run_final --mode practice --n 4 --seeds 3 5 7 9`.
+2. **Les** loggene: `python -m nightshift.analyze --last 4`. Finn det som taper mest.
+3. **Endre** én ting per PR.
+4. **Sammenlign** på samme seeder. Behold bare hvis snittet går opp uten mer straff.
+
+Regler:
+- **Plasser:** laget deler 4 øvingsplasser. Avtal hvem som kjører før en runde starter.
+- **Seeder:** juster på 3, 5, 7, 9. Sjekk av og til på 11, 13, 15, 17, og ikke juster etter dem.
+- **Resultater:** noter commit, seeder, snitt og straff i PR-en, så ingen tester det samme to ganger.
+- **Støy:** fire skift er lite. Stol på store hopp og færre straffer, ikke små endringer.
