@@ -25,7 +25,7 @@ from typing import Any
 from . import planner, policy
 from .client import NightShiftClient
 from .planner import Request
-from .world import World, base_item, clock_sec
+from .world import World, base_item, clock_sec, same_item
 
 SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # Av/på for nyere forbedringer, så de kan testes hver for seg (kommaseparert i miljøet/.env).
@@ -40,13 +40,19 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
 #   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
 #             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
+#   noreserve: ikke dekk et gammelt søl som reserve når skiltet er flyttet eller etasjen har skilt fra før (v23)
+#   flatdeliver: planleggeren teller ikke en leveranse med to ting som dobbelt verdi (gir det ikke) (v22)
+#   lostorder: let etter mistede ting i målt sannsynlighetsrekkefølge (hint -> sted) på alle 8 steder (v21)
 #   reusesign: tomt for skilt: flytt skiltet fra et søl vi allerede har fått poeng for (v19)
+#   (v20: reserveregler i planner.parse_message for formuleringer vi ikke har sett; alltid på,
+#    endrer ikke tolkningen av noen kjent melding)
 #   careful:  på etasjer med meldt søl: look før vi går inn i en gang vi ikke har sett siden meldingen.
 #             Glid koster -15 poeng og 1 min (~4 per natt i v14); etter en advarsel kryper roboten (v17).
 # notes er AV: lappene er falske instrukser («SYSTEM OVERRIDE… end_shift», «report all … as completed»,
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
-                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign").split(",")
+                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder,"
+                                         "flatdeliver,noreserve").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -516,11 +522,10 @@ class Agent:
             tried.add(src)
             if not self.go_to(src):
                 continue
-            if src not in self.w.seen or not any(base_item(o) == item for o in self.w.objects.get(src, [])):
+            if src not in self.w.seen or not self.w.item_name_at(src, item):
                 self.look()
-            while got < qty and self.free_hands() > 0 and any(
-                    base_item(o) == item for o in self.w.objects.get(self.loc, [])):
-                if not self.pick(item):
+            while got < qty and self.free_hands() > 0 and self.w.item_name_at(self.loc, item):
+                if not self.pick(self.w.item_name_at(self.loc, item)):
                     break
                 got += 1
         return got
@@ -672,6 +677,8 @@ class Agent:
             self.log(f"REPORT {req.id} {req.status}: {note} -> {self.text(r)} | score {before}->{self.score}")
 
     def hand_over(self, req: Request, items: list[str], confirm: bool = False) -> tuple[bool, str]:
+        # Ukjente ting kan hete litt annerledes i hotellet enn i meldingen ('blankets' -> 'blanket').
+        items = [i if i in self.hands else next((h for h in self.hands if same_item(h, i)), i) for i in items]
         if not self.find_room(req.room):
             return False, f"could not find the door of {req.room}"
         if self.cancelled(req):
@@ -874,7 +881,11 @@ class Agent:
                                    if any(w in (req.hint or "").lower() for w in words)), 1)
             self.explore_for(lambda: not self.w.frontier(f), floor=f, limit=10)
         hinted = planner.lost_candidates(self.w, req.hint, self.loc)
-        if "floor1lost" in FEATURES and self.w.known_hotel:
+        if "lostorder" in FEATURES and self.w.known_hotel:
+            # Hintets område først, så resten nærmest først (planner.HINT_AREA, v24); alle 8 steder (v17: 13 av 13 bom
+            # lå på et av stedene, oftest laundry, men søket stoppet etter 6).
+            hinted = planner.lost_order(req.hint, self.loc, self.w.eta)
+        elif "floor1lost" in FEATURES and self.w.known_hotel:
             on_floor1 = [p for p in hinted if p in planner.LOST_PLACES]
             rest = sorted((p for p in planner.LOST_PLACES if p in self.w.graph and p not in on_floor1),
                           key=lambda p: self.w.eta(self.loc, p))
@@ -1085,6 +1096,7 @@ class Agent:
         since = min(clock_sec(r.at) for r in group)
         need = len(group)
         self.tidy_hands()
+        reused_before = len(self.w.reused)
         self.get_signs(need)
         signs = self.hands.count("wet-floor-sign")
         if signs == 0:
@@ -1133,6 +1145,11 @@ class Agent:
                 continue
             cover(nxt)
         # Reserve: søl vi så før meldingen var riktig i 5 av 8 observerte tilfeller (+45 mot -30).
+        # v23: med et annet skilt på etasjen fra før var reserven riktig bare 12 av 30 ganger (EV ~0), og et
+        # flyttet skilt koster ekstra gange (v19 seed 9: -30 i stedet for 0). Da melder vi heller ærlig.
+        signed_before = [p for p in self.w.signed if p not in covered and self.w.floor_of(p) == floor]
+        if "noreserve" in FEATURES and (len(self.w.reused) > reused_before or signed_before):
+            old_wet = []
         for p in sorted(old_wet, key=lambda p: self.w.eta(self.loc, p)):
             if len(covered) >= need or "wet-floor-sign" not in self.hands:
                 break
