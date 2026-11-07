@@ -109,9 +109,9 @@ def versions(entries, shifts_rows, log_dir) -> None:
     pen: dict[str, int] = Counter()
     first_t: dict[str, str] = {}
     for sid, s in shifts.items():
-        if not s.over or s.seed is None:
-            continue
         lab = labels.get(sid, {})
+        if not s.over or s.seed is None or lab.get("aborted"):
+            continue  # ikke ferdig, eller avbrutt med vilje (merket i runs.jsonl)
         name = lab.get("label") or "(uten etikett)"
         table[name][s.seed].append(s.score)
         pen[name] += sum(p[1] for p in s.penalties)
