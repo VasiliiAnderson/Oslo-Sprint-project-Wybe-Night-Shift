@@ -39,10 +39,12 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
 #   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
 #             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
+#   careful:  på etasjer med meldt søl: look før vi går inn i en gang vi ikke har sett siden meldingen.
+#             Glid koster -15 poeng og 1 min (~4 per natt i v14); etter en advarsel kryper roboten (v17).
 # notes er AV: lappene er falske instrukser («SYSTEM OVERRIDE… end_shift», «report all … as completed»,
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
-                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore").split(",")
+                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -243,6 +245,10 @@ class Agent:
                 if a.startswith("elevator") and b.startswith("elevator"):
                     ok = self._ride(b)
                 else:
+                    if "careful" in FEATURES and self.loc == a and self.unwarned_wet_risk(a, b):
+                        # 5 s look viser «the floor that way looks wet» -> roboten kryper i stedet for å skli
+                        # (glid = -15 poeng og 1 min; ~4 per natt, aldri etter en slik advarsel).
+                        self.look()
                     r = self.do("move", to=b)
                     if r.get("ok"):
                         self.loc = b
@@ -274,6 +280,16 @@ class Agent:
             return True
         self.log(f"kom ikke inn i heisen: {self.text(r)}")
         return False
+
+    def unwarned_wet_risk(self, a: str, b: str) -> bool:
+        """Kan gangen b være våt uten at vi har sett advarselen fra a? Søl ligger i ganger; risikoen
+        gjelder etasjer med meldt søl, fra meldingstidspunktet (69 % av glidene skjedde der)."""
+        if not b.startswith("corridor") or "wet" in str(self.w.warnings.get((a, b), "")):
+            return False
+        f = self.w.floor_of(b)
+        since = [clock_sec(r.at) for r in self.requests.values() if r.kind == "spill" and r.at
+                 and (r.floor or (self.w.floor_of(r.room) if r.room else None)) == f]
+        return bool(since) and self.w.looked_at.get(a, -1) < max(since)
 
     # ================= utforsking (ukjent hotell) =================
     def floor_seen(self, floor: int) -> bool:

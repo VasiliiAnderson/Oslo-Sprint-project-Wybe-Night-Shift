@@ -270,6 +270,31 @@ def test_explore_unknown_hotel():
         agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
 
 
+def test_careful_look_before_wet_floor():
+    from nightshift import agent as agent_mod
+    saved = set(agent_mod.FEATURES)
+    try:
+        agent_mod.FEATURES.update({"explore", "careful"})
+        hotel = FakeHotel()
+        a = Agent(hotel, World(use_prior=False), verbose=False)
+        a.look()
+        assert a.find_room("room-201") == "corridor-2x"
+        hotel.t += 60
+        h, rest = divmod(hotel.t % 86400, 3600)
+        spill = msg("Someone mentioned a spill on floor 2.", "R-009")
+        spill.at = f"{h:02d}:{rest // 60:02d}:{rest % 60:02d}"
+        a.requests = {spill.id: spill}
+        looks = hotel.calls.count("look")
+        assert a.go_to("corridor-2y")
+        assert hotel.calls.count("look") == looks + 1, "look i corridor-2x før vi går inn i en mulig våt gang"
+        assert a.go_to("corridor-2x") and a.go_to("corridor-2y")
+        assert hotel.calls.count("look") == looks + 2, "bare én gang per sted etter meldingen"
+        agent_mod.FEATURES.discard("careful")
+        assert a.go_to("corridor-2x") and hotel.calls.count("look") == looks + 2
+    finally:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:
