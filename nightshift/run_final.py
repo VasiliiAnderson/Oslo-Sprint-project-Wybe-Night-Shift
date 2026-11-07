@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import os
 import subprocess
 import threading
 import time
@@ -36,6 +37,14 @@ from .world import World
 LOG_DIR.mkdir(exist_ok=True)
 RUNS = LOG_DIR / "runs.jsonl"
 _runs_lock = threading.Lock()
+
+
+def keep_awake() -> None:
+    """Windows: ikke sov/ventemodus (skjerm på) mens skiftene går. Uten dette sovnet maskinen
+    17:21–18:50 og fire skift sto stille. Gjelder bare så lenge prosessen lever."""
+    if os.name == "nt":
+        import ctypes
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)
 
 
 def git_version() -> dict:
@@ -125,6 +134,7 @@ class Runner:
 
     def monitor(self, ids: list[str], stop: threading.Event, every: float = 20) -> None:
         while not stop.wait(every):
+            keep_awake()
             self.print_table(ids)
 
     def print_table(self, ids: list[str]) -> None:
@@ -184,6 +194,7 @@ class Runner:
         waiting_msg = ""
         pending_seed = next(order)
         while True:
+            keep_awake()
             for sid, t in list(active.items()):
                 if not t.is_alive():
                     del active[sid]
@@ -231,6 +242,7 @@ def main() -> None:
     ap.add_argument("--max-minutes", type=float, default=55)
     a = ap.parse_args()
 
+    keep_awake()
     runner = Runner(a.mode, a.label)
     print(f"versjon: {runner.version['branch']} {runner.version['commit']}  brytere: {runner.version['features']}"
           f"  etikett: {a.label or '-'}", flush=True)
