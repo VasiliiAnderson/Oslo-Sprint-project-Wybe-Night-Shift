@@ -1,0 +1,11 @@
+# Hemmeligheter – nøkkelen skal ALDRI committes
+.env
+
+# Rå skiftlogger
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
