@@ -295,6 +295,35 @@ def test_careful_look_before_wet_floor():
         agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
 
 
+def test_full_hands_do_not_block_fetching():
+    """v14 seed 9: toy (avlyst mistet-oppdrag) + nøkkelkort i hendene ga «could not find» på varer som fantes."""
+    class Stub(Agent):
+        def go_to(self, target):
+            self.loc = target
+            return True
+
+        def place(self, item, where=None):
+            self.hands.remove(item)
+            self.placed.append((item, self.loc))
+            return True
+
+        def pick(self, item):
+            self.hands.append(item)
+            return True
+
+        def look(self):
+            return {}
+
+    a = Stub.__new__(Stub)
+    a.w = World()
+    a.w.objects["storage"] = ["towel x8"]
+    a.loc, a.hands, a.cart, a.placed, a.verbose = "lobby", ["toy", "keycard"], None, [], False
+    a.requests = {r.id: r for r in (msg("Check if 204 is empty and tidy, report back.", "R-001"),)}
+    assert a.fetch_item("towel", 1) == 1, a.hands
+    assert ("toy", "front-desk") in a.placed, "funnet ting uten åpent oppdrag: hittegods i resepsjonen"
+    assert "keycard" in a.hands, "nøkkelkortet beholdes når en hånd ble ledig uten det"
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:

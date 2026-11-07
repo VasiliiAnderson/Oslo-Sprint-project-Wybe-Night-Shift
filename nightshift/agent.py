@@ -445,6 +445,9 @@ class Agent:
                 dest = next((s for s in SUPPLY_ROOMS if s in self.w.graph), None)
                 if dest and self.go_to(dest):
                     self.place(it)
+            elif not any(r.status == "open" and r.kind == "lost" and r.lost_item
+                         and self.matches(r.lost_item.lower(), [it]) for r in self.requests.values()):
+                self.leave_at_desk(it)  # funnet ting uten åpent oppdrag: hittegods, ikke bær den rundt
 
     def get_keycard(self) -> bool:
         if "keycard" in self.hands:
@@ -487,6 +490,12 @@ class Agent:
     def fetch_item(self, item: str, qty: int) -> int:
         got = 0
         tried: set[str] = set()
+        if self.free_hands() == 0:
+            # Fulle hender skal ikke bli «fant ikke varen»: rydd, og legg fra oss nøkkelkortet om nødvendig
+            # (bagasje/sjekk henter det igjen i resepsjonen).
+            self.tidy_hands(keep=[item])
+            if self.free_hands() == 0:
+                self.return_keycard()
         while got < qty and self.free_hands() > 0:
             # Aldri ta et skilt som står over et vått gulv.
             def sources() -> list[str]:
@@ -896,16 +905,21 @@ class Agent:
             self.log(f"{req.id}: fant ikke {want} ennå – venter på patruljen")
             return
         if not self.resolve_room(req):
+            self.leave_at_desk(found_item)
             return self.finish(req, False, f"found {found_item} but could not find out the guest's room")
         ok, note = self.hand_over(req, [found_item])
+        if note == "cancelled" or not ok:
+            # Ikke bær tingen med resten av natta (v14 seed 9: toy + keycard i hendene ga tre
+            # «could not find»-feil på varer som fantes). Hittegods i resepsjonen.
+            self.leave_at_desk(found_item)
         if note == "cancelled":
             return
-        if not ok and found_item in self.hands:
-            # Lever til resepsjonen (hittegods), så riktig eier kan få den senere.
-            if self.go_to("front-desk") and self.place(found_item):
-                self.w.hidden.setdefault("front-desk", []).append(found_item)
-                self.log(f"{found_item} levert som hittegods i resepsjonen")
         self.finish(req, ok, f"found {found_item}; {note}")
+
+    def leave_at_desk(self, item: str) -> None:
+        if item in self.hands and self.go_to("front-desk") and self.place(item):
+            self.w.hidden.setdefault("front-desk", []).append(item)
+            self.log(f"{item} levert som hittegods i resepsjonen")
 
     def do_message(self, req: Request) -> None:
         if not self.resolve_room(req):
@@ -1135,6 +1149,10 @@ class Agent:
 
     def get_signs(self, n: int) -> bool:
         """Hent opptil n skilt: fra lageret, eller gjenbruk skilt fra søl som har tørket."""
+        if self.free_hands() == 0 and "wet-floor-sign" not in self.hands:
+            self.tidy_hands(keep=["wet-floor-sign"])
+            if self.free_hands() == 0:
+                self.return_keycard()
         want = min(n, self.free_hands() + self.hands.count("wet-floor-sign")) - self.hands.count("wet-floor-sign")
         if want <= 0:
             return True
