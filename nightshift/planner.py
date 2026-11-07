@@ -49,6 +49,7 @@ class Request:
     updates: list[str] = field(default_factory=list)
     status: str = "open"  # open | done | failed | cancelled
     attempts: int = 0
+    waiting: bool = False  # mistet ting ikke funnet ennå: vent på at patruljen finner den
 
     @property
     def value(self) -> int:
@@ -257,7 +258,8 @@ def value_at(kind: str, age_min: float) -> float:
 def choose_next(requests: list[Request], world, here: str, now: str | None = None) -> Request | None:
     """Velg oppdraget med best verdi per sekund, der verdien regnes ved FERDIG tid (den synker med
     alderen), pluss det oppdraget taper hvis det må vente ~10 min til (haster nær 15-min-kanten)."""
-    open_ = [r for r in requests if r.status == "open" and r.kind != "unknown" and r.attempts < 2]
+    open_ = [r for r in requests if r.status == "open" and r.kind != "unknown" and r.attempts < 2
+             and not r.waiting]
     if not open_:
         return None
     from .world import clock_sec

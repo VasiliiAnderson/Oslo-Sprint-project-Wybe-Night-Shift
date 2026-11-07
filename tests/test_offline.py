@@ -91,6 +91,20 @@ def test_decay_priority():
     assert planner.choose_next([new, old], w, "lobby", "22:13:00").id == "R-002"
 
 
+def test_waiting_lost_wakes_when_seen():
+    a = Agent.__new__(Agent)
+    a.w = World()
+    a.verbose = False
+    a.clock = "01:00:00"
+    r = msg("Guest in 207 lost glasses, maybe the lobby.", "R-005")
+    r.waiting = True
+    a.requests = {r.id: r}
+    assert planner.choose_next([r], a.w, "lobby") is None, "ventende skal ikke velges"
+    a.w.hidden["laundry"] = ["glasses"]
+    a.wake_waiting_lost()
+    assert not r.waiting and planner.choose_next([r], a.w, "lobby") is r
+
+
 def test_spill_timing():
     assert clock_sec("23:59:59") < clock_sec("00:00:01") < clock_sec("05:59:00")
     w = World()

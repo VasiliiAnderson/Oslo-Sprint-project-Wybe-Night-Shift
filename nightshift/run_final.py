@@ -29,7 +29,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from .agent import Agent
+from .agent import FEATURES, Agent
 from .client import LOG_DIR, RATE, NightShiftClient
 from .world import World
 
@@ -60,7 +60,7 @@ class Runner:
     def __init__(self, mode: str, label: str = "") -> None:
         self.mode = mode
         self.label = label
-        self.version = git_version()
+        self.version = {**git_version(), "features": ",".join(sorted(FEATURES))}
         self.index_path = LOG_DIR / f"run-{mode}.json"
         self.agents: dict[str, Agent] = {}
         self.done: dict[str, int] = {}
@@ -232,7 +232,8 @@ def main() -> None:
     a = ap.parse_args()
 
     runner = Runner(a.mode, a.label)
-    print(f"versjon: {runner.version['branch']} {runner.version['commit']}  etikett: {a.label or '-'}", flush=True)
+    print(f"versjon: {runner.version['branch']} {runner.version['commit']}  brytere: {runner.version['features']}"
+          f"  etikett: {a.label or '-'}", flush=True)
     if a.continuous:
         if a.mode != "practice":
             raise SystemExit("--continuous er bare for øving")

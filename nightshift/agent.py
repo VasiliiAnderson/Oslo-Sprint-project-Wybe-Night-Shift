@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import time
 from dataclasses import asdict
@@ -26,6 +27,10 @@ from .planner import Request
 from .world import World, base_item, clock_sec
 
 SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
+# Av/på for nyere forbedringer, så de kan testes hver for seg (kommaseparert i miljøet/.env).
+#   waitlost: mistet ting som ikke finnes holdes åpen, patruljen leter på kjente steder (v8)
+#   batch:    samlekjøring av brett og to enkle leveranser per tur (v9)
+FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "waitlost,batch").split(",") if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
 SUPPLY_ROOMS = ("storage", "laundry")
@@ -531,6 +536,12 @@ class Agent:
         if not self.resolve_room(req):
             return self.finish(req, False, f"could not find out which room {req.guest} is in")
         self.tidy_hands()
+        # Samlekjøring: to enkle leveranser (1 ting hver) fra samme lagerrom på én tur, siden
+        # roboten har to hender.
+        if "batch" in FEATURES and sum(req.items.values()) == 1 and self.free_hands() == 2:
+            partner = self.delivery_partner(req)
+            if partner:
+                return self.do_deliver_pair(req, partner)
         remaining = dict(req.items)
         delivered: list[str] = []
         while remaining:
@@ -555,6 +566,44 @@ class Agent:
             self.finish(req, False, f"delivered {delivered or 'nothing'}, could not find {remaining}")
         else:
             self.finish(req, True, f"delivered {', '.join(delivered)} to {req.room}")
+
+    def delivery_partner(self, req: Request) -> Request | None:
+        """Et annet åpent enkelt-leveranseoppdrag hvis ting ligger i samme lagerrom som vår."""
+        mine = next(iter(req.items))
+        src = set(self.w.item_locations(mine)) or set(SUPPLY_ROOMS)
+        best = None
+        for r in self.requests.values():
+            if r is req or r.status != "open" or r.kind != "deliver" or r.waiting or not r.room:
+                continue
+            if sum(r.items.values()) != 1:
+                continue
+            other = next(iter(r.items))
+            osrc = set(self.w.item_locations(other)) or set(SUPPLY_ROOMS)
+            if src & osrc:
+                if best is None or int(re.sub(r"\D", "", r.id)) < int(re.sub(r"\D", "", best.id)):
+                    best = r
+        return best
+
+    def do_deliver_pair(self, a: Request, b: Request) -> None:
+        self.log(f"samlekjøring levering: {a.id} + {b.id}")
+        got = {}
+        for r in (a, b):
+            item = next(iter(r.items))
+            got[r.id] = self.fetch_item(item, 1) == 1
+        for r in sorted((a, b), key=lambda r: self.w.eta(self.loc, self.w.corridor_for(r.room) or self.loc)):
+            item = next(iter(r.items))
+            if not got[r.id]:
+                if r is a:
+                    self.finish(r, False, f"could not find {item} in the hotel")
+                continue  # partneren prøves igjen senere som vanlig
+            ok, note = self.hand_over(r, [item])
+            if note == "cancelled":
+                continue
+            if not ok:
+                self.finish(r, False, note)
+            else:
+                self.finish(r, True, f"delivered {item} to {r.room}")
+        self.tidy_hands()
 
     def scan_here(self) -> list[str]:
         r = self.do("scan")
@@ -610,7 +659,13 @@ class Agent:
                 self.w.hidden[place] = [f for f in found if f != pick]
                 break
         if not found_item:
-            return self.finish(req, False, f"searched {len(cands)} places for {want} but could not find it")
+            if "waitlost" not in FEATURES:
+                return self.finish(req, False, f"searched {len(cands)} places for {want} but could not find it")
+            # Ikke gi opp: riktig ting ligger ofte et annet sted enn hintet (238/243 leveranser fulgte
+            # nummer-regelen, men 15 av 17 bom var «tingen lå et annet sted»). Patruljen leter videre.
+            req.waiting = True
+            self.log(f"{req.id}: fant ikke {want} ennå – venter på patruljen")
+            return
         if not self.resolve_room(req):
             return self.finish(req, False, f"found {found_item} but could not find out the guest's room")
         ok, note = self.hand_over(req, [found_item])
@@ -644,17 +699,39 @@ class Agent:
         if not self.go_to("kitchen-pass"):
             return self.finish(req, False, "could not reach the kitchen pass")
         self.look()
-        num = req.room.split("-")[1]
         trays = [base_item(o) for o in self.w.objects.get(self.loc, []) if base_item(o).startswith("tray")]
-        tray = next((t for t in trays if num in t), None)
-        if not tray:
+
+        def tray_for(r: Request) -> str | None:
+            num = r.room.split("-")[1] if r.room else None
+            return next((t for t in trays if num and t == f"tray-{num}"), None) or \
+                next((t for t in trays if num and num in t), None)
+
+        if not tray_for(req):
             return self.finish(req, False, f"no tray for {req.room} at the kitchen pass (saw {trays})")
-        if not self.pick(tray):
-            return self.finish(req, False, f"could not pick up {tray}")
-        ok, note = self.hand_over(req, [tray])
-        if note == "cancelled":
-            return
-        self.finish(req, ok, note)
+        # Samlekjøring: ta med alle brett som venter på andre åpne brett-oppdrag (én tur til kjøkkenet).
+        batch = [req] + ([r for r in self.requests.values()
+                          if r is not req and r.status == "open" and r.kind == "tray" and r.room and tray_for(r)]
+                         if "batch" in FEATURES else [])
+        loaded: list[tuple[Request, str]] = []
+        for r in batch:
+            t = tray_for(r)
+            if t and self.pick(t):
+                loaded.append((r, t))
+                trays.remove(t)
+            elif r is req:
+                return self.finish(req, False, f"could not pick up {t}")
+            else:
+                break  # vogna er full eller noe annet: lever det vi har
+        if len(loaded) > 1:
+            self.log(f"samlekjøring brett: {[r.id for r, _ in loaded]}")
+        while loaded:
+            # Nærmeste rom først.
+            loaded.sort(key=lambda rt: self.w.eta(self.loc, self.w.corridor_for(rt[0].room) or self.loc))
+            r, t = loaded.pop(0)
+            ok, note = self.hand_over(r, [t])
+            if note == "cancelled":
+                continue
+            self.finish(r, ok, note)
 
     def do_luggage(self, req: Request) -> None:
         if not self.ensure_cart():
@@ -872,13 +949,38 @@ class Agent:
         if "keycard" in self.hands and not self.needs_keycard():
             self.tidy_hands()
             return
-        if self.battery < 99 and self.dock():
+        # Venter en mistet ting, er scanning verdt batteriet (ca. 45 poeng per funn).
+        threshold = 60 if self.waiting_lost() else 99
+        if self.battery < threshold and self.dock():
             return
         self.patrol_step()
 
+    def waiting_lost(self) -> list[Request]:
+        return [r for r in self.requests.values() if r.status == "open" and r.kind == "lost" and r.waiting]
+
+    def wake_waiting_lost(self) -> None:
+        """En ventende mistet ting er sett av patruljen: gjør oppdraget aktivt igjen."""
+        for r in self.waiting_lost():
+            want = (r.lost_item or "").lower()
+            if any(self.owned_name(r, self.matches(want, f)) for f in self.w.hidden.values()):
+                r.waiting = False
+                r.attempts = 0
+                self.log(f"{r.id}: patruljen har sett {want} – henter den")
+
+    def expire_waiting_lost(self) -> None:
+        """Mot slutten av natten: rapporter ærlig det vi aldri fant."""
+        if self.clock and clock_sec(self.clock) >= clock_sec("05:45:00"):
+            for r in self.waiting_lost():
+                r.waiting = False
+                self.finish(r, False, f"searched for {r.lost_item} all night but could not find it")
+
     def patrol_step(self) -> None:
-        skip = ("elevator", "stairwell", "charging")
-        places = [p for p in self.w.places() if not p.startswith(skip) and self.w.path(self.loc, p)]
+        if "waitlost" in FEATURES:
+            # Scan koster 1 % batteri: bare der mistede ting faktisk dukker opp (planner.LOST_PLACES).
+            places = [p for p in planner.LOST_PLACES if p in self.w.graph and self.w.path(self.loc, p)]
+        else:
+            skip = ("elevator", "stairwell", "charging")
+            places = [p for p in self.w.places() if not p.startswith(skip) and self.w.path(self.loc, p)]
         if not places:
             self.look()
             return
@@ -898,6 +1000,8 @@ class Agent:
             while self.actions < max_actions and time.monotonic() - t0 < max_seconds:
                 if self.mail:
                     self.read_inbox()
+                self.wake_waiting_lost()
+                self.expire_waiting_lost()
                 # Lavt batteri: lad helt opp til CHARGE_TO i stedet for å bli vekket av hver melding
                 # (observert felle: lader 0–3 min, vekkes, fortsatt <30 %, lader igjen … hele natten).
                 if self.battery < LOW_BATTERY:
