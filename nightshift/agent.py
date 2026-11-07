@@ -31,7 +31,11 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   waitlost: mistet ting som ikke finnes holdes åpen, patruljen leter på kjente steder (v8)
 #   batch:    samlekjøring av brett og to enkle leveranser per tur (v9)
 #   notes:    les lapper som dukker opp rundt i hotellet (v10)
-FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "waitlost,batch,notes").split(",") if f.strip()}
+#   visible:  mistede ting som ligger synlig (look) teller også, ikke bare skjulte (scan) (v11)
+#   endcharge: den siste timen lades bare det som trengs til 06:00, ikke til 60 % (v11)
+# waitlost er AV som standard: v8 gjorde snittet dårligere (1762 -> 1710, kontroll 1945 -> 1834).
+FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "batch,notes,visible,endcharge").split(",")
+            if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
 SUPPLY_ROOMS = ("storage", "laundry")
@@ -680,15 +684,28 @@ class Agent:
         want = (req.lost_item or "").lower()
         self.tidy_hands()
         found_item = None
-        known = [p for p, f in self.w.hidden.items() if self.owned_name(req, self.matches(want, f))]
+        visible_on = "visible" in FEATURES
+        # Steder der riktig ting allerede er sett: skjult (scan) eller synlig (look-objekter).
+        # 68 av 159 mistede ting vi ga opp, lå SYNLIG et sted – scan viser bare skjulte ting.
+        def seen_at(p: str) -> list[str]:
+            vis = [base_item(o) for o in self.w.objects.get(p, [])] if visible_on else []
+            return self.w.hidden.get(p, []) + vis
+        known = [p for p in set(self.w.hidden) | (set(self.w.objects) if visible_on else set())
+                 if self.owned_name(req, self.matches(want, seen_at(p)))]
         cands = known + [p for p in planner.lost_candidates(self.w, req.hint, self.loc)[:10] if p not in known]
         for place in cands:
             if self.cancelled(req):
                 return
             if not self.go_to(place):
                 continue
-            found = self.w.hidden[place] if place in known else self.scan_here()
-            pick = self.owned_name(req, self.matches(want, found))
+            pick = None
+            if visible_on:
+                vis = [base_item(o) for o in self.look().get("objects", [])]  # 5 s, før dyr scan (60 s)
+                pick = self.owned_name(req, self.matches(want, vis))
+            found = self.w.hidden.get(place, [])
+            if not pick:
+                found = self.w.hidden[place] if place in known and place in self.w.hidden else self.scan_here()
+                pick = self.owned_name(req, self.matches(want, found))
             if pick and self.pick(pick):
                 found_item = pick
                 self.w.hidden[place] = [f for f in found if f != pick]
@@ -972,6 +989,14 @@ class Agent:
         self.log(f"dock: {t}")
         return bool(r.get("ok")) and "already" not in t.lower()
 
+    def battery_limits(self) -> tuple[float, float]:
+        """(lad under, lad opp til). Mot slutten av natta trengs mindre: v7 ladet 63 min etter
+        04:30 mens oppdrag ventet (f.eks. 23->38 % kl. 05:50 med 7 oppdrag i kø)."""
+        if "endcharge" not in FEATURES or not self.clock:
+            return LOW_BATTERY, CHARGE_TO
+        hours_left = max(0.0, (clock_sec("06:00:00") - clock_sec(self.clock)) / 3600)
+        return min(LOW_BATTERY, 6 + 20 * hours_left), min(CHARGE_TO, 12 + 25 * hours_left)
+
     def idle(self) -> None:
         """Ingen oppdrag. Hver scan koster 1 % batteri (målt), så vi venter i laderen.
 
@@ -1036,13 +1061,14 @@ class Agent:
                 self.expire_waiting_lost()
                 # Lavt batteri: lad helt opp til CHARGE_TO i stedet for å bli vekket av hver melding
                 # (observert felle: lader 0–3 min, vekkes, fortsatt <30 %, lader igjen … hele natten).
-                if self.battery < LOW_BATTERY:
+                low, target = self.battery_limits()
+                if self.battery < low:
                     self.charging = True
                 if self.charging:
-                    if self.battery >= CHARGE_TO:
+                    if self.battery >= target:
                         self.charging = False
                     else:
-                        self.log(f"lader ({self.battery:.0f}% -> {CHARGE_TO:.0f}%)")
+                        self.log(f"lader ({self.battery:.0f}% -> {target:.0f}%)")
                         if not self.dock():
                             self.charging = False
                         self.status()

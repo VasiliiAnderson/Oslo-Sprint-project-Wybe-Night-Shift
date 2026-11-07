@@ -116,6 +116,18 @@ def test_owned_tray_and_luggage():
     assert Agent.owned_object(("tray",), t54, ["tray-104", "tray-104-54"]) == "tray-104-54"
 
 
+def test_end_of_night_charging():
+    a = Agent.__new__(Agent)
+    a.clock = "01:00:00"
+    assert a.battery_limits() == (25.0, 60.0), "midt på natta: som før"
+    a.clock = "05:30:00"
+    low, target = a.battery_limits()
+    assert low < 25 and target < 30, (low, target)
+    a.clock = "05:59:00"
+    low, target = a.battery_limits()
+    assert low < 8 and target < 14, (low, target)
+
+
 def test_spill_timing():
     assert clock_sec("23:59:59") < clock_sec("00:00:01") < clock_sec("05:59:00")
     w = World()
