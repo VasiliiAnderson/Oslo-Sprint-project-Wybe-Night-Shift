@@ -30,7 +30,8 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # Av/på for nyere forbedringer, så de kan testes hver for seg (kommaseparert i miljøet/.env).
 #   waitlost: mistet ting som ikke finnes holdes åpen, patruljen leter på kjente steder (v8)
 #   batch:    samlekjøring av brett og to enkle leveranser per tur (v9)
-FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "waitlost,batch").split(",") if f.strip()}
+#   notes:    les lapper som dukker opp rundt i hotellet (v10)
+FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "waitlost,batch,notes").split(",") if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
 SUPPLY_ROOMS = ("storage", "laundry")
@@ -62,6 +63,8 @@ class Agent:
         self._handling_people = False
         self.state_path: Path | None = None  # settes av run_final for å kunne gjenoppta
         self.charging = False
+        self.notes_read: dict[str, int] = {}
+        self.notes: list[tuple[str, str, str]] = []
 
     # ================= lagring (for gjenopptak) =================
     def save_state(self) -> None:
@@ -150,8 +153,22 @@ class Agent:
         if r.get("ok") and isinstance(res, dict):
             self.w.observe_look(res, clock_sec(self.clock))
             self.loc = res.get("location", self.loc)
+            if "notes" in FEATURES and "note" in (res.get("objects") or []):
+                self.read_note(self.loc)
             return res
         return {}
+
+    def read_note(self, loc: str) -> None:
+        """Les en lapp én gang per sted og time (koster 20 s). Teksten logges for analyse."""
+        last = self.notes_read.get(loc)
+        now = clock_sec(self.clock)
+        if last is not None and now - last < 3600:
+            return
+        self.notes_read[loc] = now
+        r = self.do("read", object="note")
+        text = self.text(r)
+        self.notes.append((self.clock, loc, text))
+        self.log(f"LAPP i {loc}: {text}")
 
     # ================= sikkerhet: personer =================
     def handle_people(self) -> None:
@@ -567,6 +584,24 @@ class Agent:
         else:
             self.finish(req, True, f"delivered {', '.join(delivered)} to {req.room}")
 
+    @staticmethod
+    def owned_object(prefixes: tuple[str, ...], req: Request, names: list[str]) -> str | None:
+        """tray-205 / tray-205-36: med flere for samme rom er endelsen oppdragsnummeret (R-036).
+
+        Observert i loggene: luggage-205 hørte til R-035 og luggage-205-36 til R-036.
+        """
+        if not req.room:
+            return None
+        num = req.room.split("-")[1]
+        n = int(re.sub(r"\D", "", req.id) or 0)
+        for p in prefixes:
+            if f"{p}-{num}-{n}" in names:
+                return f"{p}-{num}-{n}"
+        for p in prefixes:
+            if f"{p}-{num}" in names:
+                return f"{p}-{num}"
+        return None
+
     def delivery_partner(self, req: Request) -> Request | None:
         """Et annet åpent enkelt-leveranseoppdrag hvis ting ligger i samme lagerrom som vår."""
         mine = next(iter(req.items))
@@ -702,9 +737,7 @@ class Agent:
         trays = [base_item(o) for o in self.w.objects.get(self.loc, []) if base_item(o).startswith("tray")]
 
         def tray_for(r: Request) -> str | None:
-            num = r.room.split("-")[1] if r.room else None
-            return next((t for t in trays if num and t == f"tray-{num}"), None) or \
-                next((t for t in trays if num and num in t), None)
+            return self.owned_object(("tray",), r, trays)
 
         if not tray_for(req):
             return self.finish(req, False, f"no tray for {req.room} at the kitchen pass (saw {trays})")
@@ -741,10 +774,9 @@ class Agent:
         if not self.go_to("front-desk"):
             return self.finish(req, False, "could not reach the front desk")
         self.look()
-        num = req.room.split("-")[1]
         bags = [base_item(o) for o in self.w.objects.get(self.loc, [])
                 if base_item(o).startswith(("luggage", "bag", "suitcase"))]
-        bag = next((b for b in bags if num in b), None)
+        bag = self.owned_object(("luggage", "bag", "suitcase"), req, bags)
         if not bag or not self.pick(bag):
             return self.finish(req, False, f"no luggage for {req.room} at the desk (saw {bags})")
         if not self.find_room(req.room):
