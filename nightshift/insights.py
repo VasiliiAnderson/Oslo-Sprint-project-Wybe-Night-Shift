@@ -25,7 +25,7 @@ from statistics import mean, median
 
 from .analyze import build_shifts, read_entries
 from .client import LOG_DIR
-from .planner import parse_message
+from .planner import parse_message, value_at
 from .world import clock_sec
 
 SECTIONS = ["versions", "lost", "battery", "spill", "decay", "followup", "penalties", "replies"]
@@ -57,19 +57,43 @@ def walk(rows: list[dict]):
         yield e, cmd, args, res, loc, clock
 
 
+def _expected(q, outcome: str, clock: str | None) -> float:
+    """Forventet poeng for én rapport (planner.value_at), brukt når flere rapporter deler en poengendring."""
+    if outcome in ("declined", "cancelled"):
+        return 5.0
+    if outcome != "done" or q is None:
+        return 0.0
+    age = max(0.0, (clock_sec(clock) - clock_sec(q.at)) / 60) if clock and q.at else 0.0
+    n = max(1, sum(q.items.values())) if q.kind == "deliver" else 1
+    return value_at(q.kind, age) * n
+
+
 def report_deltas(rows: list[dict]):
-    """For hver report: (forespørsel, utfall, svartekst, poengendring, klokke). Poeng fra neste status."""
-    score, pending = 0, None
+    """For hver report: (forespørsel, utfall, svartekst, klokke, notat, poengendring). Poeng fra neste status.
+
+    Fra v13 sjekker agenten status sjeldnere, så flere rapporter kan dele én poengendring. Da får hver
+    rapport sin FORVENTEDE verdi som float (int = målt nøyaktig), og resten kommer som en egen linje
+    (forespørsel None, utfall «uklar»). Før denne rettelsen fikk den første rapporten 0 – det så ut som
+    ~100 tapte poeng per natt på støy og beskjeder som egentlig ga full uttelling.
+    """
+    msgs = messages(rows)
+    score, pending = 0, []
     for e, cmd, args, res, loc, clock in walk(rows):
         if isinstance(res, dict) and isinstance(res.get("score"), int):
-            if pending:
-                yield (*pending, res["score"] - score)
-                pending = None
+            total = res["score"] - score
             score = res["score"]
+            if len(pending) == 1:
+                yield (*pending[0], total)
+            elif pending:
+                exp = [round(_expected(msgs.get(p[0]), p[1], p[3])) for p in pending]
+                for p, x in zip(pending, exp):
+                    yield (*p, float(x))
+                if total - sum(exp):
+                    yield (None, "uklar", "", pending[-1][3], f"{len(pending)} rapporter uten status imellom",
+                           total - sum(exp))
+            pending = []
         if cmd == "report" and (e.get("resp") or {}).get("ok"):
-            if pending:
-                yield (*pending, 0)
-            pending = (args.get("request"), args.get("outcome"), str(res), clock, args.get("note", ""))
+            pending.append((args.get("request"), args.get("outcome"), str(res), clock, args.get("note", "")))
 
 
 def messages(rows: list[dict]) -> dict:
@@ -209,7 +233,7 @@ def spill(entries, shifts_rows, log_dir) -> None:
                     if "spill" in m.get("text", "").lower() and m.get("request"):
                         msg_at[m["request"]] = clock_sec(m.get("at"))
         for rid, outcome, reply, clock, note, delta in report_deltas(rows):
-            if rid not in msg_at or outcome != "done":
+            if rid not in msg_at or outcome != "done" or isinstance(delta, float):  # bare målte
                 continue
             m = re.search(r"(corridor-\w+)", note)
             if not m:
@@ -232,7 +256,9 @@ def decay(entries, shifts_rows, log_dir) -> None:
         msgs = messages(rows)
         for rid, outcome, reply, clock, note, delta in report_deltas(rows):
             q = msgs.get(rid)
-            if not q or outcome != "done" or "Thanks" not in reply or not clock or not q.at:
+            # float = anslag (flere rapporter delte én status), ikke målt
+            if not q or outcome != "done" or "Thanks" not in reply or not clock or not q.at \
+                    or isinstance(delta, float):
                 continue
             age = (clock_sec(clock) - clock_sec(q.at)) / 60
             for lo, hi in edges:
