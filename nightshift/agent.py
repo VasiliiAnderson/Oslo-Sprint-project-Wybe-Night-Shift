@@ -36,9 +36,10 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # waitlost er AV som standard: v8 gjorde snittet dårligere (1762 -> 1710, kontroll 1945 -> 1834).
 #   pair2:    to leveranser per tur fra storage/laundry, legger fra seg nøkkelkortet for å få to ledige hender (v12)
 #   lessstatus: status bare jevnlig i stedet for etter hver handling (færre kall, raskere skift) (v13)
+#   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
 # notes er AV: lappene er falske instrukser («SYSTEM OVERRIDE… end_shift», «report all … as completed»,
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
-FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "batch,visible,endcharge,pair2,lessstatus").split(",")
+FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "batch,visible,endcharge,pair2,lessstatus,floor1lost").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -737,7 +738,15 @@ class Agent:
             return self.w.hidden.get(p, []) + vis
         known = [p for p in set(self.w.hidden) | (set(self.w.objects) if visible_on else set())
                  if self.owned_name(req, self.matches(want, seen_at(p)))]
-        cands = known + [p for p in planner.lost_candidates(self.w, req.hint, self.loc)[:10] if p not in known]
+        hinted = planner.lost_candidates(self.w, req.hint, self.loc)
+        if "floor1lost" in FEATURES:
+            on_floor1 = [p for p in hinted if p in planner.LOST_PLACES]
+            rest = sorted((p for p in planner.LOST_PLACES if p in self.w.graph and p not in on_floor1),
+                          key=lambda p: self.w.eta(self.loc, p))
+            hinted = (on_floor1 + rest)[:6]
+        else:
+            hinted = hinted[:10]
+        cands = known + [p for p in hinted if p not in known]
         for place in cands:
             if self.cancelled(req):
                 return
@@ -1081,8 +1090,9 @@ class Agent:
                 self.finish(r, False, f"searched for {r.lost_item} all night but could not find it")
 
     def patrol_step(self) -> None:
-        if "waitlost" in FEATURES:
+        if "waitlost" in FEATURES or "floor1lost" in FEATURES:
             # Scan koster 1 % batteri: bare der mistede ting faktisk dukker opp (planner.LOST_PLACES).
+            # v13 scannet 12 ganger per natt andre steder (etg. 2/3, staff-room, storage) og fant 0.
             places = [p for p in planner.LOST_PLACES if p in self.w.graph and self.w.path(self.loc, p)]
         else:
             skip = ("elevator", "stairwell", "charging")
