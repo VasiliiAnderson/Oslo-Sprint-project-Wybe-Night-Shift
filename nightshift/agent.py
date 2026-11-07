@@ -34,7 +34,8 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   visible:  mistede ting som ligger synlig (look) teller også, ikke bare skjulte (scan) (v11)
 #   endcharge: den siste timen lades bare det som trengs til 06:00, ikke til 60 % (v11)
 # waitlost er AV som standard: v8 gjorde snittet dårligere (1762 -> 1710, kontroll 1945 -> 1834).
-FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "batch,notes,visible,endcharge").split(",")
+#   pair2:    to leveranser per tur fra storage/laundry, legger fra seg nøkkelkortet for å få to ledige hender (v12)
+FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "batch,notes,visible,endcharge,pair2").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -559,9 +560,13 @@ class Agent:
         self.tidy_hands()
         # Samlekjøring: to enkle leveranser (1 ting hver) fra samme lagerrom på én tur, siden
         # roboten har to hender.
-        if "batch" in FEATURES and sum(req.items.values()) == 1 and self.free_hands() == 2:
+        if sum(req.items.values()) == 1 and ("batch" in FEATURES or "pair2" in FEATURES):
             partner = self.delivery_partner(req)
-            if partner:
+            if partner and "pair2" in FEATURES and self.free_hands() == 1 and "keycard" in self.hands:
+                # Nøkkelkortet blokkerte parring hele natta (v9 slo aldri til). Resepsjonen ligger ved
+                # lobbyen; bagasje- og sjekk-oppdrag henter kortet der uansett.
+                self.return_keycard()
+            if partner and self.free_hands() == 2:
                 return self.do_deliver_pair(req, partner)
         remaining = dict(req.items)
         delivered: list[str] = []
@@ -607,10 +612,16 @@ class Agent:
         return None
 
     def delivery_partner(self, req: Request) -> Request | None:
-        """Et annet åpent enkelt-leveranseoppdrag hvis ting ligger i samme lagerrom som vår."""
+        """Et annet åpent enkelt-leveranseoppdrag som kan tas på samme tur.
+
+        batch: bare fra samme lagerrom. pair2: storage og laundry ligger i samme gang (5 m), så alle
+        varer fra lagerrommene kan pares; leveranser til samme etasje foretrekkes.
+        """
         mine = next(iter(req.items))
+        relaxed = "pair2" in FEATURES
         src = set(self.w.item_locations(mine)) or set(SUPPLY_ROOMS)
-        best = None
+        my_floor = self.w.floor_of(req.room) if req.room else None
+        best, best_key = None, None
         for r in self.requests.values():
             if r is req or r.status != "open" or r.kind != "deliver" or r.waiting or not r.room:
                 continue
@@ -618,10 +629,16 @@ class Agent:
                 continue
             other = next(iter(r.items))
             osrc = set(self.w.item_locations(other)) or set(SUPPLY_ROOMS)
-            if src & osrc:
-                if best is None or int(re.sub(r"\D", "", r.id)) < int(re.sub(r"\D", "", best.id)):
-                    best = r
+            if not (src & osrc) and not (relaxed and osrc & set(SUPPLY_ROOMS)):
+                continue
+            key = (0 if self.w.floor_of(r.room) == my_floor else 1, int(re.sub(r"\D", "", r.id) or 0))
+            if best_key is None or key < best_key:
+                best, best_key = r, key
         return best
+
+    def return_keycard(self) -> None:
+        if "keycard" in self.hands and self.go_to("front-desk"):
+            self.place("keycard")
 
     def do_deliver_pair(self, a: Request, b: Request) -> None:
         self.log(f"samlekjøring levering: {a.id} + {b.id}")

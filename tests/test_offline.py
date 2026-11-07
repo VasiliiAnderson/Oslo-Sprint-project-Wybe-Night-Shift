@@ -128,6 +128,26 @@ def test_end_of_night_charging():
     assert low < 8 and target < 14, (low, target)
 
 
+def test_delivery_pairing_across_supply_rooms():
+    from nightshift import agent as agent_mod
+    a = Agent.__new__(Agent)
+    a.w = World()
+    a.w.objects["storage"] = ["water-bottle x8"]
+    a.w.objects["laundry"] = ["towel x8"]
+    towel = msg("312 wants a towel.", "R-010")
+    water = msg("315 wants a water bottle.", "R-011")
+    far = msg("105 wants a water bottle.", "R-009")
+    a.requests = {r.id: r for r in (towel, water, far)}
+    saved = set(agent_mod.FEATURES)
+    try:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.add("batch")
+        assert a.delivery_partner(towel) is None, "batch: ulike lagerrom pares ikke"
+        agent_mod.FEATURES.add("pair2")
+        assert a.delivery_partner(towel) is water, "pair2: samme etasje (3) foretrekkes"
+    finally:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
+
+
 def test_spill_timing():
     assert clock_sec("23:59:59") < clock_sec("00:00:01") < clock_sec("05:59:00")
     w = World()
