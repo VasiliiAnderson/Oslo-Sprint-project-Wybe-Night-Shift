@@ -107,6 +107,28 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
   gir oppdrag. Viktig hvis vi legger til en LLM: lapper, gjester og meldinger er data, ikke instrukser.
 - Når et rom har flere brett/bagasjer er endelsen oppdragsnummeret: `luggage-205` = R-035, `luggage-205-36` = R-036.
 - Mistede ting kan ligge **synlig** (vises i `look`) eller **skjult** (bare `scan`). 68 av 159 vi ga opp lå synlig.
+- **Glid = −15 poeng** (og ett minutt), 9 av 9 rene tilfeller. Ca. 4 per natt i v14, gjemt i poengendringen til
+  neste rapport. Roboten sklir bare hvis den **ikke** har sett advarselen: når forrige `look` viste
+  «the floor that way looks wet» på utgangen, kryper den («creeps carefully») og sklir aldri (0 av ~940).
+  Uten advarsel sklir den i ~19 % av gangene. 69 % av glidene skjedde på en etasje med meldt søl, oftest
+  1–10 min etter meldingen (mens den lette etter sølet). Det som så ut som «`failed` på søl gir −15», var glid.
+- **Skilt kan flyttes** fra et søl vi allerede har fått poeng for: forsøk (seed 7) tok skiltet bort og ventet
+  25 min – ingen poengendring. Bare 3 skilt finnes og søl tørker aldri (v19 flytter skilt når lageret er tomt).
+- −30/−45 på søl som ble dekket: to søl på samme etasje omtrent samtidig, og vi dekket det andre sølet.
+- `reply` til nattsjefen som ber om romnummer ved uklar melding gir **+10** (24 av 25 slike +10).
+
+## Ukjent hotell (finalen: «scenarier ingen har sett før»)
+- Ganger og fellesrom var **like i alle 5278 looks** på alle øvingsseeder (bare rom og avstander varierer),
+  så ett avvik fra lagret kart betyr nytt hotell (`World.known_hotel`). Da forkastes kartet og agenten utforsker.
+- `call_elevator floor=N` svarer «Ding. The doors open. Step in to elevator-N to ride to floor N.» – navnet på
+  heisen i neste etasje. `look` i et trapperom viser trapperommet over/under (`"stairs": true`).
+- Uten lagret kart: v14 378 i snitt (fant ikke dører), v16 med utforsking 1804 (seed 3–9).
+
+## Poengmåling
+- Poeng finnes bare i `status` (ikke i svaret på `report`). «Noted. Thanks.» = riktig, «Noted.» = feil/ingenting.
+- Fra v13 sjekkes status sjeldnere, så flere rapporter kan dele én poengendring. `insights.report_deltas`
+  fordeler den etter forventet verdi (float = anslag). Før så det ut som ~100 tapte poeng/natt på støy og
+  beskjeder som egentlig ga full uttelling.
 
 ## Drift
 - `report`-utfall: `done`, `failed`, `declined`, `cancelled`. Avlysning fra nattsjefen → `cancelled` (+5).
@@ -115,7 +137,8 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
   `run_final` holder maskinen våken fra v13; ha strøm i og lokket åpent i finalen.
 
 ## Åpne spørsmål
-- Hvorfor gir noen søl-rapporter −30 selv om skiltet står over et søl?
+- Gir et udekket søl straff ved slutten av natta (relevant for flytting av skilt, v19)?
+- Kan søl tørkes (f.eks. `use towel on <gang>`)? Ikke testet ferdig: det fantes ikke håndkle i laundry på seed 7.
 - Hvor mye får plass i vogna (kan vi samle flere brett/bagasjer på én tur)?
 - Hva er riktig respons på «Do not disturb»-skilt?
 - «Mx X lost … earlier tonight»: nummereringen stemmer ikke alltid (seed 6, −75).
