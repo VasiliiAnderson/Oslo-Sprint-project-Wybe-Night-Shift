@@ -66,8 +66,16 @@ class Agent:
                 "guest_rooms": self.guest_rooms, "hidden": self.w.hidden, "score": self.score,
                 "clock": self.clock}
         tmp = self.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(self.state_path)
+        # På Windows kan filen være låst et øyeblikk (antivirus/indeksering). Lagring skal aldri
+        # kunne stoppe et skift: prøv noen ganger, og gi opp stille.
+        for attempt in range(5):
+            try:
+                tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                tmp.replace(self.state_path)
+                return
+            except OSError:
+                time.sleep(0.2 * (attempt + 1))
+        self.log("advarsel: klarte ikke å lagre tilstand (fortsetter)")
 
     def load_state(self) -> None:
         if not self.state_path or not self.state_path.exists():
@@ -903,7 +911,7 @@ class Agent:
                             self.charging = False
                         self.status()
                         continue
-                req = planner.choose_next(list(self.requests.values()), self.w, self.loc)
+                req = planner.choose_next(list(self.requests.values()), self.w, self.loc, self.clock)
                 if req is None:
                     self.idle()
                     self.status()

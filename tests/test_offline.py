@@ -69,6 +69,28 @@ def test_lost_item_owner():
     assert a.owned_name(a.requests["R-017"], ["glasses"]) is None, "skal ikke gjette eier"
 
 
+def test_lost_search_starts_at_hint():
+    w = World()
+    c = planner.lost_candidates(w, "the kitchen pass", "charging-dock")
+    assert c[0] == "kitchen-pass", c
+    c = planner.lost_candidates(w, "somewhere around the ground floor corridor", "charging-dock")
+    assert c[0].startswith("corridor-1"), c
+
+
+def test_decay_priority():
+    assert planner.value_at("check", 0) == 34 and planner.value_at("check", 22) == 18
+    assert planner.value_at("check", 16) < planner.value_at("check", 10)
+    w = World()
+    old = msg("Check if 204 is empty and tidy, report back.", "R-001")
+    new = msg("Check if 205 is empty and tidy, report back.", "R-002")
+    # R-001 er 8 min gammel, rett før verdien faller: ta den først (61 mot 59 poeng totalt).
+    old.at, new.at = "22:00:00", "22:08:00"
+    assert planner.choose_next([new, old], w, "lobby", "22:08:00").id == "R-001"
+    # R-001 har allerede falt (13 min): da er det best å ta den ferske først (53 mot 45 poeng).
+    old.at, new.at = "22:00:00", "22:12:00"
+    assert planner.choose_next([new, old], w, "lobby", "22:13:00").id == "R-002"
+
+
 def test_spill_timing():
     assert clock_sec("23:59:59") < clock_sec("00:00:01") < clock_sec("05:59:00")
     w = World()

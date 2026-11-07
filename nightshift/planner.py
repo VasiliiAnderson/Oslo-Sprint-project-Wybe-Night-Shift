@@ -183,8 +183,23 @@ def referenced_ids(text: str) -> list[str]:
     return re.findall(r"R-\d+", text)
 
 
+# Alle 288 mistede ting i øvingsloggene ble funnet på ett av disse stedene (aldri i 2./3. etasje,
+# storage eller staff-room). Hintet i meldingen stemmer ofte ikke, så vi leter her etter hintet.
+LOST_PLACES = ("corridor-1a", "lobby-bar", "corridor-1b", "lobby", "laundry", "kitchen-pass",
+               "corridor-1c", "front-desk")
+
+
 def lost_candidates(world, hint: str | None, near: str) -> list[str]:
-    """Steder å scanne, sortert etter avstand fra `near`."""
+    """Steder å lete på (hintet og naboene først).
+
+    v6 prøvde å lete på alle LOST_PLACES etter hintet: snittet falt fra ~1800 til 1665 og det ble
+    ikke færre bom. Tilbake til hint + naboer (v5).
+    """
+    return _hint_candidates(world, hint, near)
+
+
+def _hint_candidates(world, hint: str | None, near: str) -> list[str]:
+    """Steder hintet peker på, sortert etter avstand fra `near`."""
     hint = (hint or "").lower()
     floor = None
     for words, f in ((("ground", "first floor", "floor 1", "1st"), 1),
@@ -214,11 +229,39 @@ def lost_candidates(world, hint: str | None, near: str) -> list[str]:
     return sorted(cands, key=lambda p: world.eta(near, p))
 
 
-def choose_next(requests: list[Request], world, here: str) -> Request | None:
-    """Høyest verdi per (grovt estimert) sekund."""
+# Målte poeng (done + Thanks) etter alder i minutter, fra nightshift.insights decay (61 skift).
+# Nesten full verdi de første ~15 min, så faller den brått.
+DECAY: dict[str, list[tuple[float, float]]] = {
+    "check":   [(0, 34), (10, 31), (22, 18), (45, 10), (90, 8)],
+    "deliver": [(0, 25), (10, 25), (22, 14), (45, 11), (90, 9)],
+    "lost":    [(0, 46), (10, 45), (22, 30), (45, 12), (90, 12)],
+    "luggage": [(0, 45), (10, 39), (22, 26), (45, 14), (90, 14)],
+    "message": [(0, 24), (10, 20), (22, 13), (45, 9), (90, 0)],
+    "noise":   [(0, 29), (10, 25), (22, 17), (45, 7), (90, 7)],
+    "spill":   [(0, 52), (10, 50), (22, 44), (45, 34), (90, 33)],
+    "tray":    [(0, 39), (10, 31), (22, 22), (45, 15), (90, 11)],
+    "followup": [(0, 5), (90, 5)],
+}
+
+
+def value_at(kind: str, age_min: float) -> float:
+    pts = DECAY.get(kind) or [(0, VALUE.get(kind, 0)), (90, VALUE.get(kind, 0))]
+    if age_min <= pts[0][0]:
+        return pts[0][1]
+    for (a0, v0), (a1, v1) in zip(pts, pts[1:]):
+        if age_min <= a1:
+            return v0 + (v1 - v0) * (age_min - a0) / (a1 - a0)
+    return pts[-1][1]
+
+
+def choose_next(requests: list[Request], world, here: str, now: str | None = None) -> Request | None:
+    """Velg oppdraget med best verdi per sekund, der verdien regnes ved FERDIG tid (den synker med
+    alderen), pluss det oppdraget taper hvis det må vente ~10 min til (haster nær 15-min-kanten)."""
     open_ = [r for r in requests if r.status == "open" and r.kind != "unknown" and r.attempts < 2]
     if not open_:
         return None
+    from .world import clock_sec
+    now_s = clock_sec(now) if now else None
 
     def est(r: Request) -> float:
         dst = world.corridor_for(r.room) if r.room else None
@@ -241,4 +284,15 @@ def choose_next(requests: list[Request], world, here: str) -> Request | None:
             t += world.eta(here, "front-desk") + 30
         return t + 30
 
-    return max(open_, key=lambda r: (r.value / (est(r) + 1), -int(re.sub(r"\D", "", r.id) or 0)))
+    def priority(r: Request) -> float:
+        secs = est(r)
+        if now_s is None or not r.at:
+            return r.value / (secs + 1)
+        age = max(0.0, (now_s - clock_sec(r.at)) / 60)
+        done_at = age + secs / 60
+        mult = max(1, sum(r.items.values())) if r.kind == "deliver" else 1
+        v = value_at(r.kind, done_at) * mult
+        loss_if_wait = (value_at(r.kind, done_at) - value_at(r.kind, done_at + 10)) * mult
+        return (v + loss_if_wait) / (secs + 1)
+
+    return max(open_, key=lambda r: (priority(r), -int(re.sub(r"\D", "", r.id) or 0)))
