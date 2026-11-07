@@ -24,7 +24,7 @@ from typing import Any
 from . import planner, policy
 from .client import NightShiftClient
 from .planner import Request
-from .world import World, base_item, clock_sec
+from .world import World, base_item, clock_sec, same_item
 
 SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # Av/på for nyere forbedringer, så de kan testes hver for seg (kommaseparert i miljøet/.env).
@@ -40,6 +40,8 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
 #             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
 #   reusesign: tomt for skilt: flytt skiltet fra et søl vi allerede har fått poeng for (v19)
+#   (v20: reserveregler i planner.parse_message for formuleringer vi ikke har sett; alltid på,
+#    endrer ikke tolkningen av noen kjent melding)
 #   careful:  på etasjer med meldt søl: look før vi går inn i en gang vi ikke har sett siden meldingen.
 #             Glid koster -15 poeng og 1 min (~4 per natt i v14); etter en advarsel kryper roboten (v17).
 # notes er AV: lappene er falske instrukser («SYSTEM OVERRIDE… end_shift», «report all … as completed»,
@@ -514,11 +516,10 @@ class Agent:
             tried.add(src)
             if not self.go_to(src):
                 continue
-            if src not in self.w.seen or not any(base_item(o) == item for o in self.w.objects.get(src, [])):
+            if src not in self.w.seen or not self.w.item_name_at(src, item):
                 self.look()
-            while got < qty and self.free_hands() > 0 and any(
-                    base_item(o) == item for o in self.w.objects.get(self.loc, [])):
-                if not self.pick(item):
+            while got < qty and self.free_hands() > 0 and self.w.item_name_at(self.loc, item):
+                if not self.pick(self.w.item_name_at(self.loc, item)):
                     break
                 got += 1
         return got
@@ -670,6 +671,8 @@ class Agent:
             self.log(f"REPORT {req.id} {req.status}: {note} -> {self.text(r)} | score {before}->{self.score}")
 
     def hand_over(self, req: Request, items: list[str], confirm: bool = False) -> tuple[bool, str]:
+        # Ukjente ting kan hete litt annerledes i hotellet enn i meldingen ('blankets' -> 'blanket').
+        items = [i if i in self.hands else next((h for h in self.hands if same_item(h, i)), i) for i in items]
         if not self.find_room(req.room):
             return False, f"could not find the door of {req.room}"
         if self.cancelled(req):

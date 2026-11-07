@@ -160,7 +160,61 @@ def parse_message(msg: dict) -> Request | None:
         req.kind = "unknown"
     if req.kind in ("noise",) and not req.room:
         req.kind = "unknown"
+    if req.kind == "unknown":
+        _fallback(req, body, low)
     return req
+
+
+# ---- Reserveregler for formuleringer vi ikke har sett (finalen: «scenarier ingen har sett før»).
+# Brukes BARE når reglene over ga «unknown», så alle kjente meldinger tolkes likt som før
+# (sjekket mot alle loggede meldinger, se tests/test_offline.py).
+_WHO = r"(?:the\s+)?(?:guests?|occupants?|people|person|party)?\s*(?:in|of|staying in|at)?\s*(?:room\s*)?"
+_GENERIC_ITEM = re.compile(
+    r"\b(?:wants|would like|needs|is asking for|asked for|asks for|requests|requested|could use)\s+"
+    r"(?:(a couple of|a pair of|a|an|some|one|two|three|four|another|\d)\s+)?(?:(?:extra|spare|fresh|clean|new|more)\s+)?"
+    r"([a-z][a-z\- ]{1,28}?)(?=\s*(?:\.|,|;|!|$|\s+(?:for|please|to|tonight|now|asap|right away)\b))")
+
+
+def generic_item(phrase: str) -> str:
+    """'reading lamps' -> 'reading-lamp' (samme form som tingene i hotellet)."""
+    w = re.sub(r"\s+", "-", phrase.strip().lower())
+    return re.sub(r"(?<=[^s])s$", "", w)
+
+
+def _fallback(req: Request, body: str, low: str) -> None:
+    if m := re.match(rf"^(?:please\s+)?(?:tell|inform|notify|remind)\s+{_WHO}(\d{{3}}),?\s*(?:that\s+)?(.+)$", low):
+        req.kind, req.room = "message", f"room-{m.group(1)}"
+        req.say = "Good evening. " + to_second_person(body[m.start(2):]).capitalize() + "."
+    elif m := re.match(rf"^(?:please\s+)?let\s+{_WHO}(\d{{3}})\s+know,?\s*(?:that\s+)?(.+)$", low):
+        req.kind, req.room = "message", f"room-{m.group(1)}"
+        req.say = "Good evening. " + to_second_person(body[m.start(2):]).capitalize() + "."
+    elif m := re.match(rf"^(?:please\s+)?(?i:tell|inform|notify|remind)\s+({TITLE}\s+[A-Z][\w\-']+),?\s*(?:(?i:that)\s+)?(.+)$",
+                       body):
+        req.kind, req.guest = "message", m.group(1)
+        req.say = f"Good evening, {m.group(1)}. " + to_second_person(m.group(2)).capitalize() + "."
+    elif (m := re.search(r"\b(?:see|find out|look)\s+(?:if|whether)\s+(?:room\s*)?(\d{3})\s+is\s+"
+                         r"(?:empty|vacant|free|tidy|clean|ready)", low)):
+        req.kind, req.room = "check", f"room-{m.group(1)}"
+    elif req.room and any(w in low for w in ("noisy", "party", "shouting", "banging", "racket", "disturbance")):
+        req.kind = "noise"
+    elif any(w in low for w in ("slippery", "leak", "water on the floor")):
+        req.kind = "spill"
+        f = re.search(r"floor\s*(\d)", low)
+        req.floor = int(f.group(1)) if f else (1 if "ground" in low else None)
+    elif m := re.search(r"\btray\b.*?\b(?:to|for)\s+(?:room\s*)?(\d{3})\b", low):
+        req.kind, req.room = "tray", f"room-{m.group(1)}"
+    elif (req.room or req.guest) and (m := re.search(
+            r"\bleft\s+(?:his|her|their|a|an|my|the)\s+([a-z][a-z'\- ]*?)(?=,|\.|;|$|\s+(?:maybe|probably|possibly|"
+            r"perhaps|somewhere|earlier|tonight|in|on|at|near|by|around)\b)", low)):
+        req.kind, req.lost_item = "lost", m.group(1).strip()
+        h = re.search(r"\b(?:maybe|probably|possibly|perhaps|somewhere|last seen)\b(.*)$", low)
+        req.hint = h.group(1).strip(" .,") if h else None
+    elif (req.room or req.guest) and (m := _GENERIC_ITEM.search(low)):
+        item = generic_item(m.group(2))
+        if item and item not in ("room", "help", "assistance", "someone", "robot", "word", "minute"):
+            q = m.group(1) or "a"
+            req.kind = "deliver"
+            req.items = {item: int(q) if q.isdigit() else NUMBERS.get(q, 1)}
 
 
 def is_guest_redirect(text: str) -> bool:

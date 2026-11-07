@@ -355,6 +355,35 @@ def test_reuse_sign_from_credited_spill():
         agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
 
 
+def test_parser_unseen_phrasings():
+    """Finalen bruker «scenarier ingen har sett før»: reserveregler for nye formuleringer."""
+    from nightshift.world import same_item
+    cases = {
+        "Please inform the guest in 214 that the spa opens at nine.": ("message", "room-214", None),
+        "Let room 305 know their taxi is waiting.": ("message", "room-305", None),
+        "Remind Ms Berg that checkout is at noon.": ("message", None, None),
+        "Could you see if 117 is empty?": ("check", "room-117", None),
+        "Guests in 220 are having a party.": ("noise", "room-220", None),
+        "Slippery floor reported on floor 2.": ("spill", None, None),
+        "Take the tray up to 312.": ("tray", "room-312", None),
+        "The guest in 208 left their scarf somewhere near the lobby.": ("lost", "room-208", None),
+        "407 wants two extra blankets.": ("deliver", "room-407", {"blanket": 2}),
+        "Mr Dahl would like an umbrella.": ("deliver", None, {"umbrella": 1}),
+        "The guest in the room next to the elevator on floor 3 wants a toiletry kit.": ("unknown", None, None),
+    }
+    for text, (kind, room, items) in cases.items():
+        r = msg(text)
+        assert (r.kind, r.room) == (kind, room), (text, r.kind, r.room)
+        if items:
+            assert r.items == items, (text, r.items)
+    assert msg("Remind Ms Berg that checkout is at noon.").guest == "Ms Berg"
+    assert msg("The guest in 208 left their scarf somewhere near the lobby.").lost_item == "scarf"
+    assert msg("Slippery floor reported on floor 2.").floor == 2
+    assert msg("Please inform the guest in 214 that the spa opens at nine.").say == "Good evening. The spa opens at nine."
+    assert same_item("blankets x5", "blanket") and same_item("reading lamp", "reading-lamp")
+    assert not same_item("phone-charger", "phone") and same_item("towel", "towel")
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:

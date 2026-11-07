@@ -33,6 +33,14 @@ def base_item(name: str) -> str:
     return re.sub(r"\s+x\d+$", "", name.strip())
 
 
+def same_item(a: str, b: str) -> bool:
+    """'reading-lamp' = 'reading lamps' = 'Reading-Lamp'. For kjente ting er dette det samme som a == b."""
+    def norm(s: str) -> str:
+        s = re.sub(r"[\s_]+", "-", base_item(s).lower())
+        return re.sub(r"(?<=[^s])s$", "", s)
+    return a == b or norm(a) == norm(b)
+
+
 class World:
     def __init__(self, use_prior: bool = True) -> None:
         self.graph: dict[str, dict[str, float]] = {}  # sted -> {nabo: meter}
@@ -264,7 +272,11 @@ class World:
         return p[1] if p else 9999.0
 
     def item_locations(self, item: str) -> list[str]:
-        return [loc for loc, objs in self.objects.items() if any(base_item(o) == item for o in objs)]
+        return [loc for loc, objs in self.objects.items() if any(same_item(base_item(o), item) for o in objs)]
+
+    def item_name_at(self, loc: str, item: str) -> str | None:
+        """Navnet tingen har her (ukjente ting kan hete litt annerledes enn i meldingen)."""
+        return next((base_item(o) for o in self.objects.get(loc, []) if same_item(base_item(o), item)), None)
 
     def places(self, floor: int | None = None) -> list[str]:
         return [
