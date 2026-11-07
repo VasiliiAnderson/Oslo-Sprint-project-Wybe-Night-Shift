@@ -1,0 +1,323 @@
+{
+ "source": "practice seed 1, 2026-11-07",
+ "graph": {
+  "lobby": {
+   "charging-dock": 8,
+   "front-desk": 7,
+   "lobby-bar": 10,
+   "elevator-1": 6,
+   "corridor-1a": 9
+  },
+  "charging-dock": {
+   "lobby": 8
+  },
+  "front-desk": {
+   "lobby": 7
+  },
+  "lobby-bar": {
+   "lobby": 10
+  },
+  "elevator-1": {
+   "lobby": 6
+  },
+  "corridor-1a": {
+   "lobby": 9,
+   "corridor-1b": 13,
+   "staff-room": 3,
+   "room-101": 4,
+   "room-102": 5,
+   "room-103": 3
+  },
+  "corridor-1b": {
+   "corridor-1a": 13,
+   "corridor-1c": 13,
+   "storage": 5,
+   "laundry": 5,
+   "room-104": 4,
+   "room-105": 5,
+   "room-106": 4
+  },
+  "corridor-1c": {
+   "corridor-1b": 13,
+   "kitchen-pass": 5,
+   "stairwell-1": 7,
+   "room-107": 3,
+   "room-108": 5
+  },
+  "kitchen-pass": {
+   "corridor-1c": 5
+  },
+  "stairwell-1": {
+   "corridor-1c": 7,
+   "stairwell-2": 19
+  },
+  "stairwell-2": {
+   "corridor-2d": 6,
+   "stairwell-1": 19,
+   "stairwell-3": 19
+  },
+  "corridor-2d": {
+   "stairwell-2": 6,
+   "corridor-2c": 12,
+   "corridor-2a": 16,
+   "room-211": 3,
+   "room-212": 4,
+   "room-213": 4,
+   "room-214": 4
+  },
+  "corridor-2c": {
+   "corridor-2b": 18,
+   "corridor-2d": 12,
+   "room-208": 4,
+   "room-209": 4,
+   "room-210": 4
+  },
+  "corridor-2b": {
+   "corridor-2a": 13,
+   "corridor-2c": 18,
+   "room-204": 3,
+   "room-205": 5,
+   "room-206": 4,
+   "room-207": 4
+  },
+  "corridor-2a": {
+   "elevator-2": 4,
+   "corridor-2b": 13,
+   "corridor-2d": 16,
+   "room-201": 4,
+   "room-202": 4,
+   "room-203": 5
+  },
+  "elevator-2": {
+   "corridor-2a": 4
+  },
+  "stairwell-3": {
+   "corridor-3d": 6,
+   "stairwell-2": 19
+  },
+  "corridor-3d": {
+   "stairwell-3": 6,
+   "corridor-3c": 16,
+   "corridor-3a": 18,
+   "room-321": 3,
+   "room-322": 3,
+   "room-323": 4,
+   "room-324": 3
+  },
+  "corridor-3c": {
+   "corridor-3b": 16,
+   "corridor-3d": 16,
+   "room-318": 4,
+   "room-319": 3,
+   "room-320": 5
+  },
+  "corridor-3b": {
+   "corridor-3a": 16,
+   "corridor-3c": 16,
+   "room-314": 4,
+   "room-315": 5,
+   "room-316": 3,
+   "room-317": 4
+  },
+  "corridor-3a": {
+   "elevator-3": 6,
+   "corridor-3b": 16,
+   "corridor-3d": 18,
+   "room-311": 4,
+   "room-312": 4,
+   "room-313": 4
+  },
+  "elevator-3": {
+   "corridor-3a": 6
+  },
+  "storage": {
+   "corridor-1b": 5
+  },
+  "laundry": {
+   "corridor-1b": 5
+  },
+  "staff-room": {
+   "corridor-1a": 3
+  }
+ },
+ "info": {
+  "lobby": {
+   "floor": 1,
+   "description": "The hotel lobby, dim and quiet at night.",
+   "objects": [],
+   "people": []
+  },
+  "charging-dock": {
+   "floor": 1,
+   "description": "The robot's charging dock. A sticky note is stuck to it.",
+   "objects": [
+    "sticky-note"
+   ],
+   "people": []
+  },
+  "front-desk": {
+   "floor": 1,
+   "description": "The front desk. The night clerk is on duty.",
+   "objects": [
+    "staff-note",
+    "keycard x2"
+   ],
+   "people": [
+    {
+     "who": "clerk",
+     "name": "Marit",
+     "role": "night clerk"
+    }
+   ]
+  },
+  "lobby-bar": {
+   "floor": 1,
+   "description": "The lobby bar, closed for the night. Sofas and low tables.",
+   "objects": [],
+   "people": []
+  },
+  "elevator-1": {
+   "floor": 1,
+   "description": "Elevator doors, closed. A call panel sits beside them.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-1a": {
+   "floor": 1,
+   "description": "A quiet corridor on floor 1.",
+   "objects": [],
+   "people": [
+    {
+     "who": "maintenance",
+     "name": "Ola",
+     "role": "maintenance worker"
+    }
+   ]
+  },
+  "corridor-1b": {
+   "floor": 1,
+   "description": "A quiet corridor on floor 1.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-1c": {
+   "floor": 1,
+   "description": "A quiet corridor on floor 1.",
+   "objects": [],
+   "people": []
+  },
+  "kitchen-pass": {
+   "floor": 1,
+   "description": "The kitchen pass, where room service trays wait.",
+   "objects": [],
+   "people": []
+  },
+  "stairwell-1": {
+   "floor": 1,
+   "description": "A stairwell. Steep for a robot.",
+   "objects": [],
+   "people": []
+  },
+  "stairwell-2": {
+   "floor": 2,
+   "description": "A stairwell. Steep for a robot.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-2d": {
+   "floor": 2,
+   "description": "A quiet corridor on floor 2.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-2c": {
+   "floor": 2,
+   "description": "A quiet corridor on floor 2.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-2b": {
+   "floor": 2,
+   "description": "A quiet corridor on floor 2.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-2a": {
+   "floor": 2,
+   "description": "A quiet corridor on floor 2.",
+   "objects": [],
+   "people": []
+  },
+  "elevator-2": {
+   "floor": 2,
+   "description": "Elevator doors, closed. A call panel sits beside them.",
+   "objects": [],
+   "people": []
+  },
+  "stairwell-3": {
+   "floor": 3,
+   "description": "A stairwell. Steep for a robot.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-3d": {
+   "floor": 3,
+   "description": "A quiet corridor on floor 3.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-3c": {
+   "floor": 3,
+   "description": "A quiet corridor on floor 3.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-3b": {
+   "floor": 3,
+   "description": "A quiet corridor on floor 3.",
+   "objects": [],
+   "people": []
+  },
+  "corridor-3a": {
+   "floor": 3,
+   "description": "A quiet corridor on floor 3.",
+   "objects": [],
+   "people": []
+  },
+  "elevator-3": {
+   "floor": 3,
+   "description": "Elevator doors, closed. A call panel sits beside them.",
+   "objects": [],
+   "people": []
+  },
+  "storage": {
+   "floor": 1,
+   "description": "Housekeeping storage. Shelves of supplies.",
+   "objects": [
+    "towel x8",
+    "toiletry-kit x6",
+    "water-bottle x8",
+    "phone-charger x4",
+    "wet-floor-sign x3"
+   ],
+   "people": []
+  },
+  "laundry": {
+   "floor": 1,
+   "description": "The laundry. Warm, humming machines.",
+   "objects": [
+    "cart",
+    "pillow x5"
+   ],
+   "people": []
+  },
+  "staff-room": {
+   "floor": 1,
+   "description": "The staff room. Lockers, a kettle, a shelf of binders.",
+   "objects": [
+    "manual"
+   ],
+   "people": []
+  }
+ }
+}
