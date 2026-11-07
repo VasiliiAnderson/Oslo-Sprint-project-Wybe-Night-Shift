@@ -244,31 +244,33 @@ def referenced_ids(text: str) -> list[str]:
 LOST_PLACES = ("corridor-1a", "lobby-bar", "corridor-1b", "lobby", "laundry", "kitchen-pass",
                "corridor-1c", "front-desk")
 
-# Hvor mistede ting faktisk ble funnet, etter nøkkelord i hintet (alle øvingslogger, 694 funn, 2026-11-07).
+# Hvor hintet peker (nøkkelord i meldingen -> område). Målt: hintets område stemmer 60–85 % av gangene, både på
+# seed 1–17 og på nye seeder 21–35. Hvor RESTEN ligger varierte derimot fra seed til seed (v21 lærte en tabell
+# fra seed 1–17 og tapte på nye seeder, f.eks. seed 31 -113), så resten letes i nærmeste rekkefølge.
 # Rekkefølgen på nøklene betyr noe: «lobby bar» før «lobby».
-LOST_WHERE: dict[str, dict[str, float]] = {
-    "lobby bar": {"lobby-bar": .62, "corridor-1c": .14, "corridor-1a": .12, "corridor-1b": .10, "laundry": .02},
-    "kitchen": {"kitchen-pass": .31, "corridor-1a": .26, "corridor-1c": .23, "lobby": .12, "laundry": .04,
-                "corridor-1b": .03},
-    "laundry": {"laundry": .88, "lobby-bar": .11, "front-desk": .01},
-    "front desk": {"front-desk": .76, "lobby": .24},
-    "lobby": {"lobby": .60, "corridor-1c": .19, "corridor-1a": .10, "laundry": .09, "corridor-1b": .01},
-    "corridor": {"corridor-1b": .60, "corridor-1a": .39, "corridor-1c": .01},
+HINT_AREA: dict[str, tuple[str, ...]] = {
+    "lobby bar": ("lobby-bar",),
+    "kitchen": ("kitchen-pass", "corridor-1c"),
+    "laundry": ("laundry",),
+    "front desk": ("front-desk",),
+    "lobby": ("lobby",),
+    "corridor": ("corridor-1b", "corridor-1a"),
 }
 SEARCH_SEC = 65.0  # look (5 s) + scan (60 s) per sted
 
 
 def lost_order(hint: str | None, start: str, eta) -> list[str]:
-    """Alle LOST_PLACES i rekkefølgen som gir funn raskest: neste sted = høyest sannsynlighet per sekund
-    (gangtid + søketid) fra der vi står. Ukjente hint: nærmeste først."""
-    key = next((k for k in LOST_WHERE if k in (hint or "").lower()), None)
-    prob = LOST_WHERE.get(key, {})
-    order, here, left = [], start, list(LOST_PLACES)
-    while left:
-        nxt = max(left, key=lambda pl: ((prob.get(pl, 0.0) + 0.005) / (eta(here, pl) + SEARCH_SEC), -eta(here, pl)))
-        order.append(nxt)
-        left.remove(nxt)
-        here = nxt
+    """Alle LOST_PLACES: først hintets område (nærmeste først), så resten som en nærmeste-nabo-tur."""
+    key = next((k for k in HINT_AREA if k in (hint or "").lower()), None)
+    first = [p for p in HINT_AREA.get(key, ()) if p in LOST_PLACES]
+    order, here = [], start
+    for group in (first, [p for p in LOST_PLACES if p not in first]):
+        left = list(group)
+        while left:
+            nxt = min(left, key=lambda pl: eta(here, pl))
+            order.append(nxt)
+            left.remove(nxt)
+            here = nxt
     return order
 
 

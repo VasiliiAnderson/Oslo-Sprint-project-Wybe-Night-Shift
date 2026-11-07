@@ -880,7 +880,7 @@ class Agent:
             self.explore_for(lambda: not self.w.frontier(f), floor=f, limit=10)
         hinted = planner.lost_candidates(self.w, req.hint, self.loc)
         if "lostorder" in FEATURES and self.w.known_hotel:
-            # Målt hvor tingene ligger (planner.LOST_WHERE) + gangtid; alle 8 steder (v17: 13 av 13 bom
+            # Hintets område først, så resten nærmest først (planner.HINT_AREA, v24); alle 8 steder (v17: 13 av 13 bom
             # lå på et av stedene, oftest laundry, men søket stoppet etter 6).
             hinted = planner.lost_order(req.hint, self.loc, self.w.eta)
         elif "floor1lost" in FEATURES and self.w.known_hotel:
