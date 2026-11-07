@@ -37,9 +37,12 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   pair2:    to leveranser per tur fra storage/laundry, legger fra seg nøkkelkortet for å få to ledige hender (v12)
 #   lessstatus: status bare jevnlig i stedet for etter hver handling (færre kall, raskere skift) (v13)
 #   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
+#   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
+#             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
 # notes er AV: lappene er falske instrukser («SYSTEM OVERRIDE… end_shift», «report all … as completed»,
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
-FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES", "batch,visible,endcharge,pair2,lessstatus,floor1lost").split(",")
+FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
+                                         "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -74,6 +77,7 @@ class Agent:
         self.charging = False
         self.notes_read: dict[str, int] = {}
         self.notes: list[tuple[str, str, str]] = []
+        self.unreachable_floors: dict[int, int] = {}  # etasje -> spilltid vi sist ga opp å nå den
 
     # ================= lagring (for gjenopptak) =================
     def save_state(self) -> None:
@@ -81,7 +85,9 @@ class Agent:
             return
         data = {"requests": {k: asdict(v) for k, v in self.requests.items()},
                 "guest_rooms": self.guest_rooms, "hidden": self.w.hidden, "score": self.score,
-                "clock": self.clock}
+                "clock": self.clock,
+                # Kartet roboten har sett (viktig i et ukjent hotell, der lagret kart ikke gjelder).
+                "observed": self.w.observed, "floors": self.w.floors, "mismatch": self.w.mismatch}
         tmp = self.state_path.with_suffix(".tmp")
         # På Windows kan filen være låst et øyeblikk (antivirus/indeksering). Lagring skal aldri
         # kunne stoppe et skift: prøv noen ganger, og gi opp stille.
@@ -101,6 +107,13 @@ class Agent:
         self.requests = {k: Request(**v) for k, v in data.get("requests", {}).items()}
         self.guest_rooms = data.get("guest_rooms", {})
         self.w.hidden = data.get("hidden", {})
+        if data.get("observed") and (data.get("mismatch") or not self.w.prior):
+            # Ukjent hotell: bygg kartet fra det roboten så før krasjet.
+            self.w.observed = data["observed"]
+            self.w.floors.update(data.get("floors", {}))
+            self.w.mismatch = data.get("mismatch", 0)
+            self.w.drop_prior()
+            self.w.seen |= set(self.w.observed)
         self.log(f"gjenopptok tilstand: {len(self.requests)} oppdrag")
 
     # ================= lavnivå =================
@@ -205,6 +218,10 @@ class Agent:
     def go_to(self, target: str) -> bool:
         if self.loc == target:
             return True
+        if target not in self.w.graph and not self.w.known_hotel and not self.w.is_room(target) \
+                and "explore" in FEATURES:
+            # Ukjent hotell: let etter stedet (f.eks. storage, kitchen-pass) i stedet for å gi opp.
+            self.explore_for(lambda: target in self.w.graph)
         for _attempt in range(4):
             if self.loc == target:
                 return True
@@ -247,12 +264,83 @@ class Agent:
         if not r.get("ok") or "ding" not in self.text(r).lower():
             self.log(f"heis feilet: {self.text(r)}")
             return False
+        # «Ding. The doors open. Step in to elevator-3 to ride to floor 3.»
+        m = re.search(r"step in to ([a-z0-9-]+)", self.text(r).lower())
+        if m and m.group(1) != dest_elevator:
+            dest_elevator = m.group(1)
         r = self.do("move", to=dest_elevator)
         if r.get("ok"):
             self.loc = dest_elevator
             return True
         self.log(f"kom ikke inn i heisen: {self.text(r)}")
         return False
+
+    # ================= utforsking (ukjent hotell) =================
+    def floor_seen(self, floor: int) -> bool:
+        return any(self.w.floor_of(p) == floor for p in self.w.seen if not self.w.is_room(p))
+
+    def reach_floor(self, floor: int) -> bool:
+        """Kom til en etasje vi ikke har sett: heisen (call_elevator svarer «Step in to elevator-N»),
+        ellers trappene (look i et trapperom viser trapperommet over/under). Bare i ukjent hotell."""
+        if self.floor_seen(floor):
+            return True
+        now = clock_sec(self.clock)
+        if now - self.unreachable_floors.get(floor, -10**9) < 1800:
+            return False  # prøvde nylig uten hell
+        called = False
+        for _ in range(12):
+            lift = self.w.elevator_on(floor)
+            if lift and lift not in self.w.dead:
+                if self.go_to(lift) and self.loc == lift:
+                    self.look()
+                    return True
+                self.w.dead.add(lift)
+                continue
+            lifts = sorted((p for p in self.w.graph if p.startswith("elevator") and p not in self.w.dead),
+                           key=lambda p: self.w.eta(self.loc, p))
+            if lifts and not called and self.go_to(lifts[0]):
+                called = True
+                r = self.do("call_elevator", floor=floor)
+                m = re.search(r"step in to ([a-z0-9-]+)", self.text(r).lower())
+                if r.get("ok") and m:
+                    if self.do("move", to=m.group(1)).get("ok"):
+                        self.loc = m.group(1)
+                        self.w.floors[self.loc] = floor
+                        self.look()
+                        return True
+                self.log(f"heis til etasje {floor} feilet: {self.text(r)}")
+                continue
+            if not self.explore_step(prefer=("elevator", "stairwell")):
+                break
+            if self.floor_seen(floor):
+                return True
+        self.unreachable_floors[floor] = now
+        return False
+
+    def explore_step(self, floor: int | None = None, prefer: tuple[str, ...] = ()) -> bool:
+        """Gå til nærmeste sted vi ikke har sett (helst på `floor`, helst `prefer`-typer) og se deg
+        rundt. Koster gangtid + look (5 s). False når det ikke er noe igjen å utforske."""
+        fr = self.w.frontier(floor) if floor is not None else []
+        fr = [p for p in (fr or self.w.frontier()) if self.w.path(self.loc, p)]
+        if not fr:
+            return False
+        nxt = min(fr, key=lambda p: (bool(prefer) and not p.startswith(prefer), self.w.eta(self.loc, p)))
+        if self.go_to(nxt) and self.loc == nxt:
+            self.look()
+        else:
+            self.w.dead.add(nxt)
+        return True
+
+    def explore_for(self, done, floor: int | None = None, prefer: tuple[str, ...] = (), limit: int = 25) -> bool:
+        """Utforsk (nærmeste usette sted først) til done() er sann eller det ikke er mer å se."""
+        for _ in range(limit):
+            if done():
+                return True
+            if floor is not None and not self.reach_floor(floor):
+                floor = None
+            if not self.explore_step(floor, prefer):
+                break
+        return done()
 
     def _navigate(self, target: str) -> bool:
         r = self.do("navigate", to=target)
@@ -268,6 +356,11 @@ class Agent:
         if corridor:
             return corridor if self.go_to(corridor) else None
         floor = self.w.floor_of(room)
+        if not self.w.known_hotel and "explore" in FEATURES:
+            # Ukjent hotell: utforsk etasjen (nye ganger dukker opp underveis) til døra er funnet.
+            self.explore_for(lambda: self.w.corridor_for(room) is not None, floor=floor, prefer=("corridor",))
+            corridor = self.w.corridor_for(room)
+            return corridor if corridor and self.go_to(corridor) else None
         cands = [p for p in self.w.places(floor) if p.startswith("corridor") and p not in self.w.seen]
         cands += [p for p in self.w.places(floor) if p.startswith("corridor") and p in self.w.seen]
         tried = set()
@@ -350,6 +443,9 @@ class Agent:
         if self.cart is not None:
             return True
         places = self.w.find_object("cart") or [p for p in ("laundry",) if p in self.w.graph]
+        if not places and not self.w.known_hotel and "explore" in FEATURES:
+            self.explore_for(lambda: bool(self.w.find_object("cart")))
+            places = self.w.find_object("cart")
         for p in places:
             if not self.go_to(p):
                 continue
@@ -377,8 +473,13 @@ class Agent:
         tried: set[str] = set()
         while got < qty and self.free_hands() > 0:
             # Aldri ta et skilt som står over et vått gulv.
-            srcs = [s for s in self.w.item_locations(item) if s not in tried
-                    and not (item == "wet-floor-sign" and s.startswith("corridor"))]
+            def sources() -> list[str]:
+                return [s for s in self.w.item_locations(item) if s not in tried
+                        and not (item == "wet-floor-sign" and s.startswith("corridor"))]
+            srcs = sources()
+            if not srcs and not self.w.known_hotel and "explore" in FEATURES:
+                self.explore_for(lambda: bool(sources()))  # ukjent hotell: finn lageret
+                srcs = sources()
             if not srcs:
                 srcs = [s for s in SUPPLY_ROOMS if s in self.w.graph and s not in tried]
             if not srcs:
@@ -738,8 +839,14 @@ class Agent:
             return self.w.hidden.get(p, []) + vis
         known = [p for p in set(self.w.hidden) | (set(self.w.objects) if visible_on else set())
                  if self.owned_name(req, self.matches(want, seen_at(p)))]
+        if not self.w.known_hotel and "explore" in FEATURES:
+            # Ukjent hotell: kartlegg etasjen hintet peker på (ellers 1. etasje) før vi velger steder.
+            f = req.floor or next((n for words, n in ((("ground", "first floor", "floor 1"), 1),
+                                                       (("second", "floor 2"), 2), (("third", "floor 3"), 3))
+                                   if any(w in (req.hint or "").lower() for w in words)), 1)
+            self.explore_for(lambda: not self.w.frontier(f), floor=f, limit=10)
         hinted = planner.lost_candidates(self.w, req.hint, self.loc)
-        if "floor1lost" in FEATURES:
+        if "floor1lost" in FEATURES and self.w.known_hotel:
             on_floor1 = [p for p in hinted if p in planner.LOST_PLACES]
             rest = sorted((p for p in planner.LOST_PLACES if p in self.w.graph and p not in on_floor1),
                           key=lambda p: self.w.eta(self.loc, p))
@@ -951,6 +1058,9 @@ class Agent:
             for r in group:
                 self.finish(r, False, "could not find a wet floor sign (all signs are in use)")
             return
+        if floor and not self.w.known_hotel and "explore" in FEATURES:
+            # Ukjent hotell: se oss rundt i alle ganger på etasjen (look registrerer våte flekker).
+            self.explore_for(lambda: not self.w.frontier(floor), floor=floor, prefer=("corridor",), limit=12)
         corridors = [p for p in self.w.places(floor) if p.startswith("corridor")] if floor else \
             [p for p in self.w.places() if p.startswith("corridor")]
         covered: list[str] = []
@@ -1064,6 +1174,10 @@ class Agent:
         if "keycard" in self.hands and not self.needs_keycard():
             self.tidy_hands()
             return
+        if not self.w.known_hotel and "explore" in FEATURES and self.battery >= 35 and self.w.frontier():
+            # Ukjent hotell: bruk ledig tid til å kartlegge (ett sted om gangen, gang + look).
+            self.explore_step()
+            return
         # Venter en mistet ting, er scanning verdt batteriet (ca. 45 poeng per funn).
         threshold = 60 if self.waiting_lost() else 99
         if self.battery < threshold and self.dock():
@@ -1090,7 +1204,7 @@ class Agent:
                 self.finish(r, False, f"searched for {r.lost_item} all night but could not find it")
 
     def patrol_step(self) -> None:
-        if "waitlost" in FEATURES or "floor1lost" in FEATURES:
+        if ("waitlost" in FEATURES or "floor1lost" in FEATURES) and self.w.known_hotel:
             # Scan koster 1 % batteri: bare der mistede ting faktisk dukker opp (planner.LOST_PLACES).
             # v13 scannet 12 ganger per natt andre steder (etg. 2/3, staff-room, storage) og fant 0.
             places = [p for p in planner.LOST_PLACES if p in self.w.graph and self.w.path(self.loc, p)]

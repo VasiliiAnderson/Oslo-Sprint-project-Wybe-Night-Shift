@@ -51,8 +51,34 @@ class World:
         self.wet_since: dict[str, int] = {}
         self.dry_at: dict[str, int] = {}
         self.signed: set[str] = set()
+        # Ukjent hotell: lagret kart (bare ganger/fellesrom) mot det roboten faktisk ser.
+        # I øving var strukturen lik i alle 5278 looks på alle seeder, så ett avvik = nytt hotell.
+        self.prior: dict[str, set[str]] = {}  # sted -> naboer (ikke rom) i lagret kart
+        self.observed: dict[str, dict[str, float]] = {}  # sted -> utganger slik roboten så dem
+        self.mismatch = 0
+        self.dead: set[str] = set()  # steder vi ikke kom til (finnes kanskje ikke)
         if use_prior and PRIOR_MAP.exists():
             self._load_prior()
+
+    @property
+    def known_hotel(self) -> bool:
+        """Lagret kart er lastet, og alt roboten har sett stemmer med det."""
+        return bool(self.prior) and self.mismatch == 0
+
+    def drop_prior(self) -> None:
+        """Hotellet avviker fra lagret kart: behold bare det roboten selv har sett."""
+        self.prior = {}
+        self.graph = {}
+        for loc, exits in self.observed.items():
+            self.graph.setdefault(loc, {})
+            for nb, m in exits.items():
+                self._edge(loc, nb, m)
+        self.floors = {p: f for p, f in self.floors.items() if p in self.observed}
+
+    def frontier(self, floor: int | None = None) -> list[str]:
+        """Kjente steder (ikke rom) vi ikke har sett oss rundt i ennå."""
+        return [p for p in self.graph if not self.is_room(p) and p not in self.seen and p not in self.dead
+                and (floor is None or self.floor_of(p) == floor)]
 
     def note_wet(self, place: str, t: int) -> None:
         if place not in self.signed:
@@ -89,6 +115,7 @@ class World:
         for loc, exits in data["graph"].items():
             if self.is_room(loc):
                 continue
+            self.prior[loc] = {nb for nb in exits if not self.is_room(nb)}
             for nb, m in exits.items():
                 if not self.is_room(nb):
                     self._edge(loc, nb, m)
@@ -112,6 +139,12 @@ class World:
         self.seen.add(loc)
         if res.get("floor") is not None:
             self.floors[loc] = res["floor"]
+        if not self.is_room(loc):
+            self.observed[loc] = {e["to"]: e.get("metres", 5) for e in res.get("exits", [])}
+            if self.prior and self.prior.get(loc) != {e["to"] for e in res.get("exits", [])
+                                                      if not self.is_room(e["to"])}:
+                self.mismatch += 1
+                self.drop_prior()
         # Erstatt naboene med det vi faktisk ser.
         for nb in list(self.graph.get(loc, {})):
             self.graph.get(nb, {}).pop(loc, None)
