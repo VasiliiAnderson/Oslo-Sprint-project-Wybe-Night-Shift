@@ -318,11 +318,22 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("parts", nargs="*", help=f"deler: {', '.join(SECTIONS)} (standard: alle)")
     ap.add_argument("--dir", type=Path, nargs="*", default=[LOG_DIR], help="én eller flere loggmapper")
+    ap.add_argument("--per-seed", action="store_true",
+                    help="spillmønstre: bare nyeste skift per seed (samme seed = samme natt, så alle versjoner av "
+                         "en seed teller ellers samme situasjon mange ganger; v23 bygde på 12/30 som unikt var 2/3)")
     a = ap.parse_args(argv)
     entries = [e for d in a.dir for e in read_entries(d)]
     entries.sort(key=lambda e: e.get("t", ""))
     rows = by_shift(entries)
-    print(f"{len(rows)} skift i {', '.join(map(str, a.dir))}")
+    if a.per_seed:
+        labels = load_labels(a.dir[0])
+        newest: dict[object, str] = {}
+        for sid in rows:  # rows følger tid, så siste skift per seed vinner
+            newest[labels.get(sid, {}).get("seed") or sid] = sid
+        keep = set(newest.values())
+        rows = {s: r for s, r in rows.items() if s in keep}
+        entries = [e for e in entries if e.get("shift") in keep]
+    print(f"{len(rows)} skift i {', '.join(map(str, a.dir))}{' (nyeste per seed)' if a.per_seed else ''}")
     for part in a.parts or SECTIONS:
         globals()[part](entries, rows, a.dir[0])
 
