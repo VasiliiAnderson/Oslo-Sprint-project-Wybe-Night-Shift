@@ -15,6 +15,7 @@ import csv
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import asdict
 from datetime import datetime
@@ -86,6 +87,7 @@ class Agent:
         self.charging = False
         self.notes_read: dict[str, int] = {}
         self.notes: list[tuple[str, str, str]] = []
+        self.errors: list[str] = []  # feil i oppdrag (skrives alltid til stderr og runs.jsonl)
         self.unreachable_floors: dict[int, int] = {}  # etasje -> spilltid vi sist ga opp å nå den
 
     # ================= lagring (for gjenopptak) =================
@@ -1324,6 +1326,8 @@ class Agent:
                     raise
                 except Exception as e:  # ett oppdrag skal aldri ta ned hele skiftet
                     self.log(f"FEIL i {req.id}: {e!r}")
+                    self.errors.append(f"{self.clock} {req.id} {req.kind}: {e!r}"[:300])
+                    print(f"FEIL [{self.c.shift and self.c.shift[:12]}] {self.errors[-1]}", file=sys.stderr, flush=True)
                     req.attempts += 1
                 self.save_state()
                 self.maybe_status()

@@ -125,7 +125,8 @@ class Runner:
                 reqs = list(agent.requests.values())
                 record_run(event="end", shift=shift, seed=self.seeds.get(shift), mode=self.mode,
                            label=self.label, score=score, actions=agent.actions, requests=len(reqs),
-                           done=sum(r.status == "done" for r in reqs), **self.version)
+                           done=sum(r.status == "done" for r in reqs), errors=len(agent.errors),
+                           error_samples=agent.errors[:3], **self.version)
                 return
             except Exception:
                 with self.lock:
