@@ -20,6 +20,7 @@ PowerShell i prosjektmappen:
 $env:NIGHTSHIFT_ALLOW_FINAL = "1"
 .venv\Scripts\python.exe -m nightshift.run_final --mode final --n 10 --label "finale"
 ```
+- Avviser serveren starten (f.eks. noen sekunder før 12:00), prøver den igjen i inntil ~9 min per skift.
 - Tabellen skrives hvert 20. sekund: klokke, poeng og oppdrag per skift.
 - Ferdig når den skriver `RESULTAT: 10 skift, snitt …, snitt uten dårligste …`.
 - Skift-id-er lagres i `logs\run-final.json`, tilstanden per skift i `logs\state-<id>.json`.
