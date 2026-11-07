@@ -106,14 +106,26 @@ def test_waiting_lost_wakes_when_seen():
 
 
 def test_owned_tray_and_luggage():
+    a = Agent.__new__(Agent)
     names = ["luggage-205", "luggage-205-36", "tray-104"]
     r35 = msg("Take the bags at the desk up to 205. The room is empty.", "R-035")
     r36 = msg("Take the bags at the desk up to 205. The room is empty.", "R-036")
-    assert Agent.owned_object(("luggage",), r35, names) == "luggage-205"
-    assert Agent.owned_object(("luggage",), r36, names) == "luggage-205-36"
+    a.requests = {r.id: r for r in (r35, r36)}
+    assert a.owned_object(("luggage",), r35, names) == "luggage-205"
+    assert a.owned_object(("luggage",), r36, names) == "luggage-205-36"
+    # Brett: tillegget er et løpenummer, ikke oppdragsnummeret (observert: R-054 -> tray-104-7).
     t54 = msg("Bring the tray from the kitchen pass to 104.", "R-054")
-    assert Agent.owned_object(("tray",), t54, ["tray-104-7"]) is None, "brettet hører til R-007"
-    assert Agent.owned_object(("tray",), t54, ["tray-104", "tray-104-54"]) == "tray-104-54"
+    a.requests = {t54.id: t54}
+    assert a.owned_object(("tray",), t54, ["tray-104-7", "tray-322"]) == "tray-104-7"
+    # To åpne brett-oppdrag til 308 og to brett der: par i rekkefølge.
+    t62 = msg("Bring the tray from the kitchen pass to 308.", "R-062")
+    t71 = msg("Bring the tray from the kitchen pass to 308.", "R-071")
+    a.requests = {r.id: r for r in (t62, t71)}
+    trays = ["tray-202-2", "tray-308-11", "tray-308-12"]
+    assert a.owned_object(("tray",), t62, trays) == "tray-308-11"
+    assert a.owned_object(("tray",), t71, trays) == "tray-308-12"
+    # Eksakt oppdragsnummer vinner.
+    assert a.owned_object(("tray",), t71, ["tray-308", "tray-308-71"]) == "tray-308-71"
 
 
 def test_end_of_night_charging():

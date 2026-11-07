@@ -607,23 +607,37 @@ class Agent:
         else:
             self.finish(req, True, f"delivered {', '.join(delivered)} to {req.room}")
 
-    @staticmethod
-    def owned_object(prefixes: tuple[str, ...], req: Request, names: list[str]) -> str | None:
-        """tray-205 / tray-205-36: med flere for samme rom er endelsen oppdragsnummeret (R-036).
+    def owned_object(self, prefixes: tuple[str, ...], req: Request, names: list[str]) -> str | None:
+        """Hvilket brett/bagasje som ligger her hører til `req`?
 
-        Observert i loggene: luggage-205 hørte til R-035 og luggage-205-36 til R-036.
+        Første til et rom heter <prefix>-<rom>, senere får et tillegg: <prefix>-<rom>-<k>. For bagasje er k
+        oppdragsnummeret (luggage-205-36 = R-036), for brett et løpenummer (tray-308-11, tray-308-12).
+        Regel: eksakt oppdragsnummer vinner; ellers pares de som ligger her (sortert etter k) med de åpne
+        oppdragene til samme rom (sortert etter id), i rekkefølge. v10 krevde eksakt nummer og ga opp
+        brett som lå der (ca. 1 per natt).
         """
         if not req.room:
             return None
         num = req.room.split("-")[1]
-        n = int(re.sub(r"\D", "", req.id) or 0)
-        for p in prefixes:
-            if f"{p}-{num}-{n}" in names:
-                return f"{p}-{num}-{n}"
-        for p in prefixes:
-            if f"{p}-{num}" in names:
-                return f"{p}-{num}"
-        return None
+        pat = re.compile(rf"(?:{'|'.join(map(re.escape, prefixes))})-{num}(?:-(\d+))?")
+
+        def k(name: str) -> int | None:
+            m = pat.fullmatch(name)
+            return None if not m else int(m.group(1) or 0)
+
+        here = sorted((n for n in names if k(n) is not None), key=k)
+        if not here:
+            return None
+        rid = int(re.sub(r"\D", "", req.id) or 0)
+        for name in here:
+            if k(name) == rid:
+                return name
+        idnum = lambda r: int(re.sub(r"\D", "", r.id) or 0)  # noqa: E731
+        same = sorted((r for r in self.requests.values()
+                       if r.room == req.room and r.kind == req.kind and (r.status == "open" or r is req)),
+                      key=idnum)
+        rank = next((i for i, r in enumerate(same) if r is req), 0)
+        return here[rank] if rank < len(here) else None
 
     def delivery_partner(self, req: Request) -> Request | None:
         """Et annet åpent enkelt-leveranseoppdrag som kan tas på samme tur.
@@ -794,11 +808,12 @@ class Agent:
                           if r is not req and r.status == "open" and r.kind == "tray" and r.room and tray_for(r)]
                          if "batch" in FEATURES else [])
         loaded: list[tuple[Request, str]] = []
+        # Fordel brettene FØR vi plukker: eierskap regnes ut fra hele lista (rekkefølge per rom).
+        assigned = {r.id: tray_for(r) for r in batch}
         for r in batch:
-            t = tray_for(r)
+            t = assigned[r.id]
             if t and self.pick(t):
                 loaded.append((r, t))
-                trays.remove(t)
             elif r is req:
                 return self.finish(req, False, f"could not pick up {t}")
             else:
