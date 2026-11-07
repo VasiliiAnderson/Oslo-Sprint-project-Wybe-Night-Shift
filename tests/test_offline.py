@@ -396,6 +396,16 @@ def test_lost_order_hint_area_first():
     assert rest[0] == "lobby", "resten nærmest først (lobby ligger ved siden av baren)"
 
 
+def test_lost_order_unknown_hotel():
+    """Ukjent hotell: hintets steder først, så ALLE steder på etasjen (ikke bare ganger + lobby)."""
+    w = World()
+    order = planner.lost_order_generic(w, "the lobby bar", "charging-dock", 1)
+    assert order[:2] == ["lobby-bar", "lobby"], order
+    assert {"laundry", "kitchen-pass", "front-desk"} <= set(order), order
+    assert not any(p.startswith(("elevator", "stairwell", "charging")) for p in order), order
+    assert planner.lost_order_generic(w, "near the kitchen", "lobby", 1)[0] == "kitchen-pass"
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:
