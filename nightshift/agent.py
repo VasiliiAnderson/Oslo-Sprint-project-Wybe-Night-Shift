@@ -57,6 +57,7 @@ FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
+STALL_ROUNDS = 20  # runder uten at spillklokka går før vakten griper inn (se Agent.unstick)
 SUPPLY_ROOMS = ("storage", "laundry")
 OVER_WORDS = ("shift is over", "shift has ended", "already ended", "shift ended", "end of the shift",
               "clocked out", "no live shift", "unknown shift")
@@ -1254,8 +1255,10 @@ class Agent:
             return
         if not self.w.known_hotel and "explore" in FEATURES and self.battery >= 35 and self.w.frontier():
             # Ukjent hotell: bruk ledig tid til å kartlegge (ett sted om gangen, gang + look).
-            self.explore_step()
-            return
+            # Ingenting nåbart å utforske (f.eks. med vogna og bare trappa igjen): lad/patruljer i stedet.
+            # v24/v25 seed 25 uten kart: idle gjorde ingenting -> evig løkke uten ett kall (57 poeng).
+            if self.explore_step():
+                return
         # Venter en mistet ting, er scanning verdt batteriet (ca. 45 poeng per funn).
         threshold = 60 if self.waiting_lost() else 99
         if self.battery < threshold and self.dock():
@@ -1304,12 +1307,38 @@ class Agent:
                 self.look()
             self.scan_here()
 
+    def unstick(self) -> None:
+        """Hovedløkka har gått STALL_ROUNDS runder uten at klokka gikk. Legg oppdraget som ble valgt til
+        side (planner hopper over det etter 2 forsøk) og la tiden gå: lad, ellers patruljer ett sted."""
+        req = getattr(self, "_req", None)
+        msg = f"{self.clock} sto fast " + (f"i {req.id} {req.kind}" if req else "uten oppdrag")
+        self.log("VAKT: " + msg)
+        self.errors.append(msg[:300])
+        shift = getattr(self.c, "shift", None)
+        print(f"FEIL [{shift and shift[:12]}] {msg}", file=sys.stderr, flush=True)
+        if req is not None:
+            req.attempts += 1
+        before = self.clock
+        if not self.dock():
+            self.patrol_step()
+        if self.clock == before:
+            self.look()  # look koster 5 s, så klokka går uansett
+
     def run(self, max_actions: int = 5000, max_seconds: float = 3600) -> int:
         t0 = time.monotonic()
         try:
             self.status()
             self.look()
+            last, stall = None, 0
             while self.actions < max_actions and time.monotonic() - t0 < max_seconds:
+                # Vakt: klokka går bare når roboten handler. Mange runder uten at den har gått = noe står
+                # fast (også en løkke som bare spør om status, for status koster ingen spilltid).
+                stall = stall + 1 if self.clock == last else 0
+                last = self.clock
+                if stall >= STALL_ROUNDS:
+                    self.unstick()
+                    stall = 0
+                    continue
                 if self.mail:
                     self.read_inbox()
                 self.wake_waiting_lost()
@@ -1329,6 +1358,7 @@ class Agent:
                         self.maybe_status()
                         continue
                 req = planner.choose_next(list(self.requests.values()), self.w, self.loc, self.clock)
+                self._req = req
                 if req is None:
                     self.idle()
                     self.maybe_status()
