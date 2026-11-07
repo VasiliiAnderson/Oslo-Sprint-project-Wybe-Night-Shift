@@ -116,6 +116,19 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
   25 min – ingen poengendring. Bare 3 skilt finnes og søl tørker aldri (v19 flytter skilt når lageret er tomt).
 - −30/−45 på søl som ble dekket: to søl på samme etasje omtrent samtidig, og vi dekket det andre sølet.
 - `reply` til nattsjefen som ber om romnummer ved uklar melding gir **+10** (24 av 25 slike +10).
+- Gammelt søl som reserve (våt før meldingen) var riktig bare 12 av 30 ganger når etasjen hadde skilt fra før;
+  nytt søl (sett tørt/først vått etter meldingen) 95–98 %. v23 dropper reserven i de tilfellene.
+- Ingen sluttjustering: poengsummen ved 06:00 er lik siste `status` (også med flyttede skilt/udekkede søl).
+
+## Andre målte regler (7. nov kveld)
+- **To ting i samme leveranse gir like mye som én** (25,4 mot 26,7 poeng ferskt, n=1211).
+- **Vogna tar 8 ting.** Med vogna og fulle hender havner det man plukker i vogna (også vanlige varer).
+  Men 12 av 15 lagerturer per natt har bare én åpen leveranse, så samlekjøring med vogna gir lite.
+- **Mistede ting:** hintets område stemmer 60–85 % (stabilt på seed 1–17 og 21–35; «kitchen» = kitchen-pass
+  og corridor-1c). Hvor resten ligger varierer fra seed til seed – ikke lær en tabell (v21 tapte på nye seeder).
+- **Rom som ikke svarer, svarer nesten aldri senere** (1 av 23). Andre bank svarer i 1,2 % av tilfellene.
+- **Lading er lineær:** ~1,05 %/min uansett nivå. Lading mens oppdrag venter kostet bare ~7 poeng/natt.
+- **Fartsgrensen er per nøkkel** (alle skift samlet): nesten aldri 429 under 20 kall/s, <1 % ved 20–29, ~5 % over 30.
 
 ## Ukjent hotell (finalen: «scenarier ingen har sett før»)
 - Ganger og fellesrom var **like i alle 5278 looks** på alle øvingsseeder (bare rom og avstander varierer),
