@@ -127,6 +127,9 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
 - **Mistede ting:** hintets område stemmer 60–85 % (stabilt på seed 1–17 og 21–35; «kitchen» = kitchen-pass
   og corridor-1c). Hvor resten ligger varierer fra seed til seed – ikke lær en tabell (v21 tapte på nye seeder).
 - **Rom som ikke svarer, svarer nesten aldri senere** (1 av 23). Andre bank svarer i 1,2 % av tilfellene.
+  Fasit-forsøk 8. nov: `place item where=room-X` uten svar → «The door to room-X is locked.» (4 av 4);
+  `reply` til nattsjefen → «R-xxx is exactly as written.» (0 poeng). Ærlig `failed` (0) er det beste. Gjester
+  som åpnet tidligere på natta, slutter å svare senere (sover) – rommet fra resepsjonisten var riktig.
 - **Lading er lineær:** ~1,05 %/min uansett nivå. Lading mens oppdrag venter kostet bare ~7 poeng/natt.
 - **Fartsgrensen er per nøkkel** (alle skift samlet): nesten aldri 429 under 20 kall/s, <1 % ved 20–29, ~5 % over 30.
 
