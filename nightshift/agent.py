@@ -53,7 +53,7 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
                                          "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder,"
-                                         "flatdeliver,noreserve,unknownlost,lastcand").split(",")
+                                         "flatdeliver,noreserve,unknownlost,lastcand,signedcand").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -1193,7 +1193,18 @@ class Agent:
                 taken_after = [p for p in cands if p in self.w.reused and self.w.reused_at.get(p, -1) >= since]
                 if len(moved) + len(taken_after) < len(cands):
                     moved = []
-                cands = sorted(moved, key=lambda q: self.w.reused_at[q])[:need - len(covered)]
+                if not moved and "signedcand" in FEATURES:
+                    # Ellers: gamle våte flekker (ikke flyttet av oss) var riktige 1 av 6, og skilt flyttet for lenge
+                    # siden 0 av 2. Står det da bare igjen så mange skilt som vi mangler, ligger sølet under dem.
+                    # Et skilt vi tok ETTER meldingen sto der da sølet kom (seed 45 R-054: sølet var under det).
+                    def had_sign(p: str) -> bool:
+                        return p in self.w.signed or (p in self.w.reused and self.w.reused_at.get(p, -1) >= since)
+                    moved = [p for p in cands if had_sign(p)]
+                    rest = [p for p in cands if not had_sign(p) and not (
+                        p in self.w.wet_since and (p in self.w.reused or self.w.wet_since[p] < since - 60))]
+                    if rest or len(moved) > need - len(covered):
+                        moved = []
+                cands = sorted(moved, key=lambda q: self.w.reused_at.get(q, 0))[:need - len(covered)]
             if cands:
                 for p in sorted(cands, key=lambda q: self.w.eta(self.loc, q)):
                     if not self.go_to(p):
