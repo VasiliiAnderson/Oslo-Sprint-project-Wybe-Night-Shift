@@ -523,6 +523,42 @@ def test_client_waits_out_network_outage():
         cm.time.sleep, cm.time.monotonic, cm.LOG_DIR = real_sleep, real_mono, real_dir
 
 
+def test_renamed_places_in_unknown_hotel():
+    """Finalehotellet kan ha andre stedsnavn: laderen er der natta startet, resepsjonen der nøkkelkortene ligger,
+    kjøkkenluka der brettene står. Med kjente navn (alle øvingsnetter) endres ingenting."""
+    from nightshift import agent as agent_mod
+
+    class Renamed(FakeHotel):
+        def __init__(self):
+            super().__init__()
+            ren = {"charging-dock": "robot-bay"}
+            self.E = {ren.get(a, a): {ren.get(b, b): m for b, m in nb.items()} for a, nb in self.E.items()}
+            for a, b, m in (("lobby", "reception", 5), ("hall-1a", "galley", 6)):
+                self.E.setdefault(a, {})[b] = m
+                self.E.setdefault(b, {})[a] = m
+            self.floor = {p: self.floor.get(p, 1) for p in self.E}
+            self.at = "robot-bay"
+            self.objects.update({"reception": ["keycard x2"], "galley": ["tray-101"]})
+
+    saved = set(agent_mod.FEATURES)
+    try:
+        agent_mod.FEATURES.add("explore")
+        hotel = Renamed()
+        a = Agent(hotel, World(use_prior=False), verbose=False)
+        a.look()
+        a.loc, a.start_place = "robot-bay", "robot-bay"
+        assert a.go_to("front-desk") and hotel.at == "reception", hotel.at
+        assert a.go_to("kitchen-pass") and hotel.at == "galley", hotel.at
+        assert a.go_to("charging-dock") and hotel.at == "robot-bay", hotel.at
+        # Kjente navn: ingen alias.
+        b = Agent(FakeHotel(), World(use_prior=False), verbose=False)
+        b.look()
+        assert b.place_alias("front-desk") == "front-desk" and b.place_alias("storage") == "storage"
+        assert Agent(FakeHotel(), World(), verbose=False).place_alias("charging-dock") == "charging-dock"
+    finally:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:

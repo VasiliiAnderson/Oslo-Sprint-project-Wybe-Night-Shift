@@ -92,6 +92,7 @@ class Agent:
         self.errors: list[str] = []  # feil i oppdrag (skrives alltid til stderr og runs.jsonl)
         self.lost_floors: set[int] = set()  # ukjent hotell: etasjer der mistede ting er hintet/funnet
         self.unreachable_floors: dict[int, int] = {}  # etasje -> spilltid vi sist ga opp å nå den
+        self.start_place: str | None = None  # der natta startet = laderen (alle øvingsnetter starter der)
 
     # ================= lagring (for gjenopptak) =================
     def save_state(self) -> None:
@@ -229,13 +230,39 @@ class Agent:
             self._handling_people = False
 
     # ================= bevegelse =================
+    def place_alias(self, name: str) -> str:
+        """Ukjent hotell der et fast sted heter noe annet («finalen bruker scenarier ingen har sett før»): finn
+        stedet med samme rolle ut fra sterke kjennetegn – laderen der natta startet, resepsjonen der nøkkelkortene
+        ligger, kjøkkenluka der brettene står. Gjelder bare når navnet mangler; i alle øvingsnettene finnes navnene,
+        så der endrer dette ingenting (replay)."""
+        if self.w.known_hotel or name in self.w.graph:
+            return name
+        try:
+            if name == "charging-dock":
+                if self.start_place and self.start_place != name:
+                    return self.start_place
+                cand = [p for p, d in self.w.descriptions.items() if "charging" in d.lower()]
+            elif name == "front-desk":
+                cand = [p for p, objs in self.w.objects.items() if any(base_item(o) == "keycard" for o in objs)]
+            elif name == "kitchen-pass":
+                cand = [p for p, objs in self.w.objects.items() if any(base_item(o).startswith("tray-") for o in objs)]
+            else:
+                return name
+            cand = [p for p in cand if not self.w.is_room(p) and not p.startswith(("corridor", "elevator", "stairwell"))]
+            return cand[0] if len(cand) == 1 else name
+        except Exception:  # aldri la et navneoppslag stoppe en flytting
+            return name
+
     def go_to(self, target: str) -> bool:
+        target = self.place_alias(target)
         if self.loc == target:
             return True
         if target not in self.w.graph and not self.w.known_hotel and not self.w.is_room(target) \
                 and "explore" in FEATURES:
             # Ukjent hotell: let etter stedet (f.eks. storage, kitchen-pass) i stedet for å gi opp.
-            self.explore_for(lambda: target in self.w.graph)
+            canon = target
+            self.explore_for(lambda: self.place_alias(canon) in self.w.graph)
+            target = self.place_alias(canon)
         for _attempt in range(4):
             if self.loc == target:
                 return True
@@ -1363,6 +1390,9 @@ class Agent:
         try:
             self.status()
             self.look()
+            if self.start_place is None and (clock_sec(self.clock) <= clock_sec("22:02:00")
+                                             or "charging" in self.w.descriptions.get(self.loc, "").lower()):
+                self.start_place = self.loc  # natta starter ved laderen (se place_alias)
             last, stall = None, 0
             while self.actions < max_actions and time.monotonic() - t0 < max_seconds:
                 # Vakt: klokka går bare når roboten handler. Mange runder uten at den har gått = noe står
