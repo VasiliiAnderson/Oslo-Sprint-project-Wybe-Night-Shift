@@ -40,5 +40,6 @@ $env:NIGHTSHIFT_ALLOW_FINAL = "1"
 ## Hva agenten gjør i et ukjent hotell (v16–v26)
 Avviker hotellet fra lagret kart, forkastes kartet og agenten utforsker selv: heis til nye etasjer,
 ganger til døra er funnet, lager/vogn/kjøkken når de trengs. Mistede ting letes etter på alle steder
-på hintets etasje (v25). Uten kart i øving (seed 3–27): v16 1804, v24 1971, v25 2031 i snitt.
+på hintets etasje (v25). Uten kart i øving: v16 1804 (seed 3–9); på 7 seeds (3–27) v24 1971, v25 2031.
+v27: en etasje regnes som nådd bare hvis roboten kan komme dit nå (med vogna: heis, ikke trapp).
 v26: en vakt sørger for at natta aldri fryser (uten kart hang v24/v25 på seed 25 i 55 min: 57 poeng).
