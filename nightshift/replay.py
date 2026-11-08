@@ -57,14 +57,17 @@ def replay(path: Path, no_prior: bool = False, seconds: float = 120, verbose: bo
     c = ReplayClient(rows)
     agent = Agent(c, World(use_prior=not no_prior), verbose=verbose)
     faulthandler.dump_traceback_later(seconds + 5, exit=False)  # henger agenten: vis hvor
+    crash = None
     try:
         score = agent.run(max_actions=len(rows) + 100, max_seconds=seconds)
+    except Exception as e:  # etter et avvik får agenten «feil» svar, så krasj der er ikke nødvendigvis en feil
+        score, crash = agent.score, repr(e)[:200]
     finally:
         faulthandler.cancel_dump_traceback_later()
     logged = next((r["resp"]["result"].get("score") for r in reversed(rows)
                    if isinstance((r.get("resp") or {}).get("result"), dict) and "score" in r["resp"]["result"]), None)
     return {"log": path.name, "calls": len(rows), "used": c.i, "diverged": c.diverged, "first": c.first,
-            "score": score, "logged_score": logged, "errors": agent.errors}
+            "score": score, "logged_score": logged, "errors": agent.errors, "crash": crash}
 
 
 def shifts_with_label(prefix: str) -> list[tuple[str, object]]:
@@ -106,6 +109,8 @@ def main(argv: list[str] | None = None) -> None:
             line += f"\n    første avvik ved kall {n}: ny kode {got}, loggen {want}"
         if r["errors"]:
             line += f"\n    feil: {r['errors'][:3]}"
+        if r["crash"]:
+            line += f"\n    krasj{' etter avviket' if r['first'] else ''}: {r['crash']}"
         print(line, flush=True)
     print(f"\n{same} av {len(jobs)} skift spilt av likt")
     sys.exit(0 if same == len(jobs) else 1)

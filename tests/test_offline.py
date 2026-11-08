@@ -440,6 +440,28 @@ def test_idle_never_spins_without_a_call():
         agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
 
 
+def test_cart_takes_the_elevator_to_a_floor_seen_by_stairs():
+    """Etasje sett fra trappa før vi tok vogna: med vogna må heisen tilkalles (trappa går ikke)."""
+    from nightshift import agent as agent_mod
+    saved = set(agent_mod.FEATURES)
+    try:
+        agent_mod.FEATURES.add("explore")
+        hotel = FakeHotel()
+        a = Agent(hotel, World(use_prior=False), verbose=False)
+        a.look()
+        for p in ("lobby", "hall-1a", "stairwell-1", "stairwell-2", "stairwell-1", "hall-1a", "lobby"):
+            assert a.go_to(p), p
+            if p not in a.w.seen:
+                a.look()
+        assert any(a.w.floor_of(p) == 2 for p in a.w.seen), "2. etasje sett fra trappa"
+        a.cart, a.w.has_cart = [], True
+        hotel.calls.clear()
+        assert a.find_room("room-205") == "corridor-2y" and hotel.at == "corridor-2y", hotel.at
+        assert "call_elevator" in hotel.calls, "med vogna: heisen, ikke trappa"
+    finally:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:

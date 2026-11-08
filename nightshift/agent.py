@@ -305,7 +305,10 @@ class Agent:
 
     # ================= utforsking (ukjent hotell) =================
     def floor_seen(self, floor: int) -> bool:
-        return any(self.w.floor_of(p) == floor for p in self.w.seen if not self.w.is_room(p))
+        """Vi har sett et sted på etasjen OG kan komme dit nå. Med vogna går ikke trappa: v26 uten kart
+        seed 25 så 2. etasje fra trapperommet før vogna, tilkalte aldri heisen og fant ingen dør der (-900)."""
+        return any(self.w.floor_of(p) == floor and not self.w.is_room(p) and self.w.path(self.loc, p)
+                   for p in self.w.seen)
 
     def reach_floor(self, floor: int) -> bool:
         """Kom til en etasje vi ikke har sett: heisen (call_elevator svarer «Step in to elevator-N»),
@@ -584,7 +587,10 @@ class Agent:
     def read_inbox(self) -> None:
         r = self.do("inbox")
         self.mail = False
-        for msg in (r.get("result") or {}).get("messages", []):
+        res = r.get("result")
+        for msg in (res.get("messages") or [] if isinstance(res, dict) else []):
+            if not isinstance(msg, dict):
+                continue
             text = msg.get("text", "")
             req = planner.parse_message(msg)
             # Oppdateringer kan referere til andre oppdrag ("Skip R-041, ...").
@@ -1339,42 +1345,51 @@ class Agent:
                     self.unstick()
                     stall = 0
                     continue
-                if self.mail:
-                    self.read_inbox()
-                self.wake_waiting_lost()
-                self.expire_waiting_lost()
-                # Lavt batteri: lad helt opp til CHARGE_TO i stedet for å bli vekket av hver melding
-                # (observert felle: lader 0–3 min, vekkes, fortsatt <30 %, lader igjen … hele natten).
-                low, target = self.battery_limits()
-                if self.battery < low:
-                    self.charging = True
-                if self.charging:
-                    if self.battery >= target:
-                        self.charging = False
-                    else:
-                        self.log(f"lader ({self.battery:.0f}% -> {target:.0f}%)")
-                        if not self.dock():
+                try:
+                    if self.mail:
+                        self.read_inbox()
+                    self.wake_waiting_lost()
+                    self.expire_waiting_lost()
+                    # Lavt batteri: lad helt opp til CHARGE_TO i stedet for å bli vekket av hver melding
+                    # (observert felle: lader 0–3 min, vekkes, fortsatt <30 %, lader igjen … hele natten).
+                    low, target = self.battery_limits()
+                    if self.battery < low:
+                        self.charging = True
+                    if self.charging:
+                        if self.battery >= target:
                             self.charging = False
+                        else:
+                            self.log(f"lader ({self.battery:.0f}% -> {target:.0f}%)")
+                            if not self.dock():
+                                self.charging = False
+                            self.maybe_status()
+                            continue
+                    req = planner.choose_next(list(self.requests.values()), self.w, self.loc, self.clock)
+                    self._req = req
+                    if req is None:
+                        self.idle()
                         self.maybe_status()
                         continue
-                req = planner.choose_next(list(self.requests.values()), self.w, self.loc, self.clock)
-                self._req = req
-                if req is None:
-                    self.idle()
+                    self.log(f">>> {req.id} [{req.kind}] {req.text}")
+                    try:
+                        self.HANDLERS[req.kind](self, req)
+                    except ShiftOver:
+                        raise
+                    except Exception as e:  # ett oppdrag skal aldri ta ned hele skiftet
+                        self.log(f"FEIL i {req.id}: {e!r}")
+                        self.errors.append(f"{self.clock} {req.id} {req.kind}: {e!r}"[:300])
+                        shift = getattr(self.c, "shift", None)
+                        print(f"FEIL [{shift and shift[:12]}] {self.errors[-1]}", file=sys.stderr, flush=True)
+                        req.attempts += 1
+                    self.save_state()
                     self.maybe_status()
-                    continue
-                self.log(f">>> {req.id} [{req.kind}] {req.text}")
-                try:
-                    self.HANDLERS[req.kind](self, req)
                 except ShiftOver:
                     raise
-                except Exception as e:  # ett oppdrag skal aldri ta ned hele skiftet
-                    self.log(f"FEIL i {req.id}: {e!r}")
-                    self.errors.append(f"{self.clock} {req.id} {req.kind}: {e!r}"[:300])
-                    print(f"FEIL [{self.c.shift and self.c.shift[:12]}] {self.errors[-1]}", file=sys.stderr, flush=True)
-                    req.attempts += 1
-                self.save_state()
-                self.maybe_status()
+                except Exception as e:  # heller ikke feil utenfor et oppdrag skal ta ned skiftet
+                    self.log(f"FEIL i runden: {e!r}")
+                    self.errors.append(f"{self.clock} runde: {e!r}"[:300])
+                    shift = getattr(self.c, "shift", None)
+                    print(f"FEIL [{shift and shift[:12]}] {self.errors[-1]}", file=sys.stderr, flush=True)
         except ShiftOver as e:
             self.log(f"SKIFT SLUTT: {e}")
         try:
