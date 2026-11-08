@@ -55,7 +55,7 @@ FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
                                          "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder,"
                                          "flatdeliver,noreserve,unknownlost,lastcand").split(",")
             if f.strip()}
-LOW_BATTERY = 25.0  # under dette: lad ...
+LOW_BATTERY = 15.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
 STALL_ROUNDS = 20  # runder uten at spillklokka går før vakten griper inn (se Agent.unstick)
 SUPPLY_ROOMS = ("storage", "laundry")
