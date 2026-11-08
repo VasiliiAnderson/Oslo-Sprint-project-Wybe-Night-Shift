@@ -6,6 +6,9 @@ Agenten må kjøre helt selv: ingen styring for hånd.
 ## Før 11:45 (øvingen stenger)
 1. Siste versjon fra `smarter-orchestrator`: `git pull`, så `git log --oneline -1` (noter commit).
 2. Offline-tester: `.venv\Scripts\python.exe -m tests.test_offline` → «… tester OK».
+   Endret koden etter siste øvingsrunde? Spill av kjente netter uten serverkall:
+   `.venv\Scripts\python.exe -m nightshift.replay --label final-kand` → «16 av 16 skift spilt av likt»
+   (avvik = endringen påvirker de nettene; første avvik viser hvor).
 3. Ingen egne øvingsskift igjen: `python -m nightshift.run_final` skal ikke kjøre noe sted.
    Ikke avslutt Hermans skift.
 
@@ -34,6 +37,8 @@ $env:NIGHTSHIFT_ALLOW_FINAL = "1"
 - Ett skift som krasjer startes på nytt automatisk fra lagret tilstand (opptil 3 ganger).
 - «Too many requests» håndteres av felles fartsgrense (vent, ikke start flere prosesser).
 
-## Hva agenten gjør i et ukjent hotell (v16)
+## Hva agenten gjør i et ukjent hotell (v16–v26)
 Avviker hotellet fra lagret kart, forkastes kartet og agenten utforsker selv: heis til nye etasjer,
-ganger til døra er funnet, lager/vogn/kjøkken når de trengs. Uten kart i øving: 1804 i snitt (med: ~1940).
+ganger til døra er funnet, lager/vogn/kjøkken når de trengs. Mistede ting letes etter på alle steder
+på hintets etasje (v25). Uten kart i øving (seed 3–27): v16 1804, v24 1971, v25 2031 i snitt.
+v26: en vakt sørger for at natta aldri fryser (uten kart hang v24/v25 på seed 25 i 55 min: 57 poeng).
