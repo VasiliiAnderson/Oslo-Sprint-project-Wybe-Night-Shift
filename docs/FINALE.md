@@ -43,6 +43,8 @@ $env:NIGHTSHIFT_ALLOW_FINAL = "1"
   .venv\Scripts\python.exe -m nightshift.run_final --mode final --resume
   ```
 - Ett skift som krasjer startes på nytt automatisk fra lagret tilstand (opptil 3 ganger).
+- Testet 8. nov 05:16 (øving): prosessen drept midt i natta (00:35/00:56 spilltid), `--resume` 3 s senere
+  fortsatte begge skiftene til 06:00 (2240 og 2315 poeng, 0 feil). Tabellen viser «seed None» etterpå – ufarlig.
 - «Too many requests» håndteres av felles fartsgrense (vent, ikke start flere prosesser).
 
 ## Hva agenten gjør i et ukjent hotell (v16–v26)
