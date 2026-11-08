@@ -68,6 +68,7 @@ class World:
         self.looked_at: dict[str, int] = {}  # sted -> spilltid (sek) for siste look der
         self.covered_at: dict[str, int] = {}  # gang -> når vi satte skilt over sølet
         self.reused: set[str] = set()  # ganger der vi flyttet skiltet til et nytt søl
+        self.reused_at: dict[str, int] = {}  # gang -> når vi flyttet skiltet derfra (sek)
         if use_prior and PRIOR_MAP.exists():
             self._load_prior()
 
