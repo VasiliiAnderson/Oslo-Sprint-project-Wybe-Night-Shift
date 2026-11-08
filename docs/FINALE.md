@@ -13,7 +13,11 @@ Agenten må kjøre helt selv: ingen styring for hånd.
    Ikke avslutt Hermans skift.
 
 ## Maskinen
-- Strøm i, lokket åpent, stabilt nett. `run_final` holder Windows våken (ingen søvn/ventemodus).
+- Strøm i, lokket åpent, stabilt nett. `run_final` holder Windows våken (ingen søvn/ventemodus), men ikke hvis
+  lokket lukkes: 8. nov 09:07–09:32 sto øvingsskiftene stille i 25 min (maskinen sov). Tips: Strøm og dvale →
+  «Når jeg lukker lokket: Ikke gjør noe» (på strøm), eller bare ikke lukk lokket.
+- Nettbrudd: klienten venter på nettet i inntil 10 min per kall (v31) – spilltida står stille imens. Faller nettet
+  lenger enn det: bytt nett og bruk `--resume` (se under).
 - Bruk prosjektets Python direkte. `uv run` kan plukke feil Python hvis `VIRTUAL_ENV` peker et annet sted
   (skjedde 7. nov: anaconda uten `httpx`).
 
