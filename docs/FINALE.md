@@ -21,7 +21,8 @@ Agenten må kjøre helt selv: ingen styring for hånd.
 - Med lagret kart: 2058 i snitt på 40 nye netter (seed 183–285; median 2094, sd 233). Per natt varierer det
   ca. 1330–2570; rolige netter (45 oppdrag) gir få poeng uansett. Simulert finale (10 netter, dårligste
   strøket): median ~2100, 80 % mellom ~2010 og ~2190.
-- Uten lagret kart (nytt hotell): 2043 på 8 nye netter. 0 oppgavefeil på 40 nye netter.
+- Uten lagret kart (nytt hotell): 2117 på 24 nye netter (seed 215–229, 287–317) – samme nivå som med kart.
+  0 oppgavefeil og ingen heng på 64 nye netter med finalekoden.
 
 ## Kl. 12:00 – start (én gang, fra én maskin)
 Bare én person på laget starter finalen (samme nøkkel; to starter kan bruke opp skiftene).
