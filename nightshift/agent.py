@@ -53,7 +53,7 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
                                          "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder,"
-                                         "flatdeliver,noreserve,unknownlost").split(",")
+                                         "flatdeliver,noreserve,unknownlost,lastcand").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
@@ -1174,6 +1174,28 @@ class Agent:
                 desc = self.look().get("description", "").lower()
                 if "wet patch" in desc and "sign stands" not in desc:
                     cover(p)
+        if len(covered) < need and "lastcand" in FEATURES:
+            # Fasit-forsøk 8. nov: et nytt søl kan lande i en gang som er våt fra før (gammelt søl, flyttet skilt)
+            # eller har skilt – da gir bare en NY plassering poeng («done» med skiltet som står: −30, 0 av 12).
+            # Er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i den eneste som er igjen
+            # (riktig i alle testede tilfeller). Med flere mulige steder melder vi fortsatt ærlig «failed».
+            cands = [p for p in corridors if p not in covered
+                     and not (self.w.dry_at.get(p, -1) >= since and p not in self.w.signed
+                              and p not in self.w.wet_since)]
+            if 0 < len(cands) <= need - len(covered):
+                for p in sorted(cands, key=lambda q: self.w.eta(self.loc, q)):
+                    if not self.go_to(p):
+                        break
+                    desc = self.look().get("description", "").lower()
+                    if "sign stands" in desc:
+                        if not self.pick("wet-floor-sign"):
+                            continue
+                        self.w.signed.discard(p)
+                    elif not any(w in desc for w in ("wet patch", "spill", "puddle")):
+                        continue  # tørr likevel: sølet er ikke her
+                    if "wet-floor-sign" in self.hands and cover(p):
+                        self.w.reused.discard(p)  # dekket og godkjent igjen: skiltet kan flyttes på nytt senere
+                        self.log(f"eneste mulige sted for sølet: {p}")
         if len(covered) >= need:
             for r in group:
                 self.finish(r, True, f"Wet floor sign(s) placed over the spill(s) on floor {floor}: "
