@@ -17,7 +17,13 @@ Agenten må kjøre helt selv: ingen styring for hånd.
 - Bruk prosjektets Python direkte. `uv run` kan plukke feil Python hvis `VIRTUAL_ENV` peker et annet sted
   (skjedde 7. nov: anaconda uten `httpx`).
 
+## Forventet nivå (finalekoden a4f02e5, nye seeds)
+- Med lagret kart: 2118 i snitt på 16 nye netter (seed 183–213), 2047 på 151–181 (forrige kandidat). Per natt
+  varierer det ca. 1750–2600; rolige netter gir få poeng uansett.
+- Uten lagret kart (nytt hotell): 2043 på 8 nye netter. 0 oppgavefeil på 40 nye netter.
+
 ## Kl. 12:00 – start (én gang, fra én maskin)
+Bare én person på laget starter finalen (samme nøkkel; to starter kan bruke opp skiftene).
 PowerShell i prosjektmappen:
 ```powershell
 $env:NIGHTSHIFT_ALLOW_FINAL = "1"
