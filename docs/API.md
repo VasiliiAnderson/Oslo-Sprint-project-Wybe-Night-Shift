@@ -142,6 +142,14 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
   dekke en gammel våt flekk (75 min–3 t før meldingen) var riktig 1 av 5; `done` uten nytt skilt (sølet «under»
   et skilt som står?) 0 av 12, også når skiltet ble satt 3 min før meldingen. Hver feil = −30.
   Ærlig `failed` (0) er rett i disse tilfellene – behold noreserve.
+- **Modellen som forklarer alle 50 forsøk:** et nytt søl lander i en gang på etasjen – også en som er våt fra
+  før (gammelt søl, et skilt vi flyttet) eller **har skilt**. Da gir bare en **ny plassering** poeng: ta opp
+  skiltet og sett det ut igjen (riktig 7 av 7), mens `done` med skiltet som står gir −30 (0 av 12).
+  Sølet kommer aldri etter meldingen (vente og sjekke igjen: 0 av 4; en ny flekk 18 min senere var feil).
+- **v29 (lastcand):** er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i den eneste som er
+  igjen – dekk den (10 av 10). Flere kandidater: et skilt vi flyttet innen 2 t før meldingen gir ny melding om
+  samme søl – sett tilbake det som ble flyttet først (5 av 5; flyttet ≥3 t før: 0 av 2). Ellers `failed`.
+  Live på 8 netter med slike tilfeller: +97 per natt, søl riktig/feil/failed 36/0/5 (v24: 26/1/14).
 
 ## Ukjent hotell (finalen: «scenarier ingen har sett før»)
 - Ganger og fellesrom var **like i alle 5278 looks** på alle øvingsseeder (bare rom og avstander varierer),
