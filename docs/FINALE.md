@@ -1,5 +1,10 @@
 # Finalen søndag 8. november, 12:00–13:00
 
+## Resultat (kjørt 12:00:02–12:17:04, kode 5344325)
+**Snitt uten dårligste: 2099** (alle 10: 2034). Skift 1–10 (serverens tall): 2168, 2306, 1455 (strøket), 2483, 1905,
+2093, 2211, 1999, 1934, 1790. Alle 10 til 06:00, 0 oppgavefeil; 115 «429» håndtert av fartsgrensen. Forventet fra
+228 holdout-netter: median ~2065 (80 %: 1975–2155). Utskrift: `logs/finale.txt`.
+
 10 hemmelige skift samtidig, «scenarier ingen har sett før». Snittet teller, det dårligste skiftet strykes.
 Agenten må kjøre helt selv: ingen styring for hånd.
 
