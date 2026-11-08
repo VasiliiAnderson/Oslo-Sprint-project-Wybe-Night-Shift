@@ -146,14 +146,13 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
   før (gammelt søl, et skilt vi flyttet) eller **har skilt**. Da gir bare en **ny plassering** poeng: ta opp
   skiltet og sett det ut igjen (riktig 7 av 7), mens `done` med skiltet som står gir −30 (0 av 12).
   Sølet kommer aldri etter meldingen (vente og sjekke igjen: 0 av 4; en ny flekk 18 min senere var feil).
-- **v29 (lastcand):** er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i den eneste som er
-  igjen – dekk den (10 av 10). Flere kandidater, ALLE skilt vi har flyttet (innen 2 t før meldingen, eller etter
-  den): sett tilbake det som ble flyttet først (2 av 2). Med andre typer ved siden av bommet den regelen 2 av 2
-  (seed 145, −92), så den er strammet inn. Live på 8 netter med slike tilfeller: +97 per natt, søl
-  riktig/feil/failed 36/0/5 (v24: 26/1/14). A/B på nye seeds 131–145: +4 (før innstramming; +15 etter).
-- **v30 (signedcand):** flere kandidater, ingen nylig flyttede skilt: se bort fra gamle våte flekker vi ikke har
-  avdekket (riktige 1 av 6) og skilt flyttet for lenge siden (0 av 2). Er det som står igjen nøyaktig gangene
-  som hadde skilt da meldingen kom (står der, eller tatt av oss etter meldingen), fornyes de skiltene (4 av 5).
+- **v29 (lastcand), det som står igjen:** er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i
+  den eneste som er igjen – dekk den (nytt skilt, eller fornye skiltet som står). Riktig 10 av 10 i forsøk og
+  3 av 3 på nye netter. Live på 8 netter med slike tilfeller: +97 per natt.
+- **Gjetting blant flere kandidater lønner seg ikke.** Regler for det («skiltet vi flyttet først», «forny eneste
+  skilt») var 6 av 7 riktige på nettene de ble laget på, men 0 av 4 på 16 nye netter (seed 153, 181) – samlet
+  omtrent 1 av antall kandidater, altså tilfeldig. Fjernet. **Lærdom: valider regler på netter de ikke ble laget
+  på** (forsøk på samme natt gir fasit for den ene beslutningen, ikke for regelen).
 
 ## Ukjent hotell (finalen: «scenarier ingen har sett før»)
 - Ganger og fellesrom var **like i alle 5278 looks** på alle øvingsseeder (bare rom og avstander varierer),
