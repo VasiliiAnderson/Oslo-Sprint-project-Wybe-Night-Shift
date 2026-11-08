@@ -168,6 +168,39 @@ class Runner:
                   f"snitt uten dårligste {sum(trimmed) / len(trimmed):.0f}, min {scores[0]}, maks {scores[-1]}"
                   f"  [{self.version['branch']} {self.version['commit']}] {self.label}", flush=True)
 
+    def start_and_run(self, n: int, seeds: list[int | None], max_minutes: float) -> None:
+        """Start skiftene og sett agenten i gang for hvert i det øyeblikket det er opprettet. Finalen har «20 seconds
+        per action»: et skift som står og venter på at de andre skal starte (f.eks. en avvist start like før 12:00),
+        taper spilltid. Avviste starter prøves på nytt uten å holde igjen skiftene som allerede kjører."""
+        ids: list[str] = []
+        threads: list[threading.Thread] = []
+        stop = threading.Event()
+        mon = threading.Thread(target=self.monitor, args=(ids, stop), daemon=True)
+        mon.start()
+        attempts = 120 if self.mode == "final" else 5  # finalen: ~10 min med nye forsøk hvert 2.–5. sekund
+        for i in range(n):
+            seed = seeds[i] if i < len(seeds) else None
+            for attempt in range(attempts):
+                sid, why = self.start_one(seed)
+                if sid:
+                    ids.append(sid)
+                    self.save_index(ids)
+                    t = threading.Thread(target=self.worker, args=(sid, max_minutes), daemon=True)
+                    t.start()
+                    threads.append(t)
+                    print(f"startet skift {i + 1}/{n}: {sid} (seed {seed})", flush=True)
+                    break
+                print(f"kunne ikke starte skift {i + 1}: {why} – prøver igjen ({attempt + 1}/{attempts})", flush=True)
+                time.sleep(min(2 + attempt, 5))
+        if not ids:
+            stop.set()
+            raise SystemExit("Ingen skift å kjøre.")
+        for t in threads:
+            t.join()
+        stop.set()
+        self.print_table(ids)
+        self.summary(ids)
+
     def run(self, ids: list[str], max_minutes: float) -> None:
         threads = [threading.Thread(target=self.worker, args=(sid, max_minutes), daemon=True) for sid in ids]
         stop = threading.Event()
@@ -263,7 +296,8 @@ def main() -> None:
         ids = [s for s in saved if live.get(s, {}).get("status") == "live"]
         print(f"gjenopptar {len(ids)} av {len(saved)} skift (resten er ferdige)")
     else:
-        ids = runner.start_new(a.n, a.seeds if a.mode == "practice" else [])
+        runner.start_and_run(a.n, a.seeds if a.mode == "practice" else [], a.max_minutes)
+        return
     if not ids:
         raise SystemExit("Ingen skift å kjøre.")
     runner.run(ids, a.max_minutes)
