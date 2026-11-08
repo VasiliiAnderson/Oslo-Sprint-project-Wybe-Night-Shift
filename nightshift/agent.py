@@ -1175,7 +1175,9 @@ class Agent:
                 desc = self.look().get("description", "").lower()
                 if "wet patch" in desc and "sign stands" not in desc:
                     cover(p)
-        if len(covered) < need and "lastcand" in FEATURES:
+        # I et ukjent hotell bare når etasjen er ferdig utforsket: en gang vi ikke kjenner kan være den riktige.
+        complete = self.w.known_hotel or not self.w.frontier(floor)
+        if len(covered) < need and "lastcand" in FEATURES and complete:
             # Fasit-forsøk 8. nov: et nytt søl kan lande i en gang som er våt fra før (gammelt søl, flyttet skilt)
             # eller har skilt – da gir bare en NY plassering poeng («done» med skiltet som står: −30, 0 av 12).
             # Er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i den eneste som er igjen
