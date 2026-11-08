@@ -51,7 +51,8 @@ class SharedRateLimiter:
     MAX_RATE. (Før: x1,6 og lang pause per 429, så snittet ble ~16 kall/s selv om serveren tåler ~25.)
     """
 
-    def __init__(self, interval: float = 1 / 16, lo: float = 1 / MAX_RATE, hi: float = 2.0) -> None:
+    # hi = 0,5 s: selv etter mange 429 får 10 skift et kall hvert ~5. sekund (finalen: «20 seconds per action»).
+    def __init__(self, interval: float = 1 / 16, lo: float = 1 / MAX_RATE, hi: float = 0.5) -> None:
         self.interval, self.lo, self.hi = max(interval, lo), lo, hi
         self._next = 0.0
         self._lock = threading.Lock()
