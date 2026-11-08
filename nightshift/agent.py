@@ -58,6 +58,7 @@ FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
 STALL_ROUNDS = 20  # runder uten at spillklokka går før vakten griper inn (se Agent.unstick)
+RECOVER_WINDOW = 120 * 60  # sek: et skilt vi flyttet gir ny søl-melding om samme søl innen så lenge (fasit 8. nov)
 SUPPLY_ROOMS = ("storage", "laundry")
 OVER_WORDS = ("shift is over", "shift has ended", "already ended", "shift ended", "end of the shift",
               "clocked out", "no live shift", "unknown shift")
@@ -1178,11 +1179,16 @@ class Agent:
             # Fasit-forsøk 8. nov: et nytt søl kan lande i en gang som er våt fra før (gammelt søl, flyttet skilt)
             # eller har skilt – da gir bare en NY plassering poeng («done» med skiltet som står: −30, 0 av 12).
             # Er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i den eneste som er igjen
-            # (riktig i alle testede tilfeller). Med flere mulige steder melder vi fortsatt ærlig «failed».
+            # (riktig 8 av 8). Flere mulige steder: et skilt vi flyttet innen 2 t før meldingen gir ny melding om
+            # samme søl – ta det som ble flyttet først (5 av 5; flyttet over 3 t før: 0 av 2). Ellers ærlig «failed».
             cands = [p for p in corridors if p not in covered
                      and not (self.w.dry_at.get(p, -1) >= since and p not in self.w.signed
                               and p not in self.w.wet_since)]
-            if 0 < len(cands) <= need - len(covered):
+            if len(cands) > need - len(covered):
+                moved = [p for p in cands if p in self.w.reused
+                         and since - RECOVER_WINDOW <= self.w.reused_at.get(p, -10**9) < since]
+                cands = sorted(moved, key=lambda q: self.w.reused_at[q])[:need - len(covered)]
+            if cands:
                 for p in sorted(cands, key=lambda q: self.w.eta(self.loc, q)):
                     if not self.go_to(p):
                         break
@@ -1195,6 +1201,7 @@ class Agent:
                         continue  # tørr likevel: sølet er ikke her
                     if "wet-floor-sign" in self.hands and cover(p):
                         self.w.reused.discard(p)  # dekket og godkjent igjen: skiltet kan flyttes på nytt senere
+                        self.w.reused_at.pop(p, None)
                         self.log(f"eneste mulige sted for sølet: {p}")
         if len(covered) >= need:
             for r in group:
@@ -1239,6 +1246,7 @@ class Agent:
                     got += 1
                     self.w.signed.discard(p)
                     self.w.reused.add(p)
+                    self.w.reused_at[p] = clock_sec(self.clock) if getattr(self, "clock", "") else 0
                     self.w.wet_since[p] = 0  # gammelt søl: skal aldri tas for et nytt
                     self.log(f"flyttet skilt fra gammelt søl i {p}")
         return self.hands.count("wet-floor-sign") > 0
