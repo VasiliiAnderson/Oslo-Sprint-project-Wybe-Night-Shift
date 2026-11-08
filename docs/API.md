@@ -151,7 +151,7 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
   Sølet kommer aldri etter meldingen (vente og sjekke igjen: 0 av 4; en ny flekk 18 min senere var feil).
 - **v29 (lastcand), det som står igjen:** er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i
   den eneste som er igjen – dekk den (nytt skilt, eller fornye skiltet som står). Riktig 10 av 10 i forsøk og
-  3 av 3 på nye netter. Live på 8 netter med slike tilfeller: +97 per natt.
+  16 av 17 på 56 nye netter. Live på 8 netter med slike tilfeller: +97 per natt.
 - **Gjetting blant flere kandidater lønner seg ikke.** Regler for det («skiltet vi flyttet først», «forny eneste
   skilt») var 6 av 7 riktige på nettene de ble laget på, men 0 av 4 på 16 nye netter (seed 153, 181) – samlet
   omtrent 1 av antall kandidater, altså tilfeldig. Fjernet. **Lærdom: valider regler på netter de ikke ble laget

@@ -18,8 +18,9 @@ Agenten må kjøre helt selv: ingen styring for hånd.
   (skjedde 7. nov: anaconda uten `httpx`).
 
 ## Forventet nivå (finalekoden a4f02e5, nye seeds)
-- Med lagret kart: 2118 i snitt på 16 nye netter (seed 183–213), 2047 på 151–181 (forrige kandidat). Per natt
-  varierer det ca. 1750–2600; rolige netter gir få poeng uansett.
+- Med lagret kart: 2058 i snitt på 40 nye netter (seed 183–285; median 2094, sd 233). Per natt varierer det
+  ca. 1330–2570; rolige netter (45 oppdrag) gir få poeng uansett. Simulert finale (10 netter, dårligste
+  strøket): median ~2100, 80 % mellom ~2010 og ~2190.
 - Uten lagret kart (nytt hotell): 2043 på 8 nye netter. 0 oppgavefeil på 40 nye netter.
 
 ## Kl. 12:00 – start (én gang, fra én maskin)
