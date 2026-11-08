@@ -60,6 +60,19 @@ class Request:
         return v
 
 
+ORDINAL_FLOOR = {"ground": 1, "first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3,
+                 "fourth": 4, "4th": 4, "fifth": 5, "5th": 5}
+
+
+def floor_in(low: str) -> int | None:
+    """«floor 3» (alle kjente meldinger), ellers «the second floor» / «3rd floor» / «ground floor»."""
+    if f := re.search(r"floor\s*(\d)", low):
+        return int(f.group(1))
+    if o := re.search(r"\b(ground|first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th)[\s-]+floor", low):
+        return ORDINAL_FLOOR[o.group(1)]
+    return 1 if "ground" in low else None
+
+
 def _room(text: str) -> str | None:
     m = re.search(r"(?<!R-)\b(?:room[\s-]*)?(\d{3})\b", text, re.I)
     return f"room-{m.group(1)}" if m else None
@@ -119,6 +132,12 @@ def parse_message(msg: dict) -> Request | None:
         # Påstand om at en bestilling aldri kom. Må sjekkes mot våre egne registre (se agent.do_followup).
         req.kind, req.room = "followup", f"room-{m.group(1)}"
         req.items = parse_items(m.group(2)) or {}
+    elif req.room and re.search(r"\b(?:never|still (?:hasn't|has not|haven't|have not)|hasn't|has not)\s+"
+                                r"(?:came|come|arrived|shown up|showed up|turned up|been delivered)\b", low) \
+            and re.search(r"\b(?:ordered|asked for|requested)\b", low):
+        # Samme påstand med andre ord (ikke sett i øving): sjekkes mot egne registre som den kjente malen.
+        req.kind = "followup"
+        req.items = parse_items(body) or {}
     elif m := re.search(r"tray from the kitchen pass to (?:room\s*)?(\d{3})", low):
         req.kind, req.room = "tray", f"room-{m.group(1)}"
     elif "room service" in low and "kitchen pass" in low:
@@ -131,11 +150,7 @@ def parse_message(msg: dict) -> Request | None:
         req.kind = "noise"
     elif "spill" in low or "wet floor" in low or "puddle" in low:
         req.kind = "spill"
-        f = re.search(r"floor\s*(\d)", low)
-        if f:
-            req.floor = int(f.group(1))
-        elif "ground" in low:
-            req.floor = 1
+        req.floor = floor_in(low)
     elif m := re.match(r"tell the guest in (?:room\s*)?(?:\d{3}|the room .*? on floor \d)\s*(?:\(room \d{3}\))?,?\s*"
                        r"(?:that\s+)?(.*?)(?:\s*\(room \d{3}\))?$", body, re.I):
         req.kind, req.say = "message", "Good evening. " + to_second_person(m.group(1)).capitalize() + "."
@@ -153,6 +168,9 @@ def parse_message(msg: dict) -> Request | None:
         req.lost_item = m.group(1).strip() if m else None
         h = re.search(r"\b(?:maybe|probably|possibly|perhaps|somewhere|last seen)\b(.*)$", low)
         req.hint = h.group(1).strip(" .,") if h else None
+        if not req.hint and (h := re.search(r"\b(?:near|by|around|in|at|outside|next to)\s+(the\s+[a-z][a-z \-]{2,30}?)"
+                                            r"\s*(?:[.,;!]|$)", low)):
+            req.hint = h.group(1).strip()  # alle kjente mistet-maler har «maybe …», så de tolkes som før
     else:
         items = parse_items(body)
         if items and (req.room or req.guest):
@@ -176,6 +194,12 @@ _GENERIC_ITEM = re.compile(
     r"([a-z][a-z\- ]{1,28}?)(?=\s*(?:\.|,|;|!|$|\s+(?:for|please|to|tonight|now|asap|right away)\b))")
 
 
+_BRING_ITEM = re.compile(
+    r"\b(?:bring|take|deliver|send|carry|run)\s+(?:up\s+)?"
+    r"(?:(a couple of|a pair of|a|an|some|one|two|three|four|another|\d)\s+)?(?:(?:extra|spare|fresh|clean|new|more)\s+)?"
+    r"(?!(?:the|my|your|his|her|their|it|them)\b)([a-z][a-z\- ]{1,28}?)\s+(?:up\s+|over\s+|round\s+)?(?:to|for)\b")
+
+
 def generic_item(phrase: str) -> str:
     """'reading lamps' -> 'reading-lamp' (samme form som tingene i hotellet)."""
     w = re.sub(r"\s+", "-", phrase.strip().lower())
@@ -196,12 +220,18 @@ def _fallback(req: Request, body: str, low: str) -> None:
     elif (m := re.search(r"\b(?:see|find out|look)\s+(?:if|whether)\s+(?:room\s*)?(\d{3})\s+is\s+"
                          r"(?:empty|vacant|free|tidy|clean|ready)", low)):
         req.kind, req.room = "check", f"room-{m.group(1)}"
+    elif m := re.search(r"\bis\s+(?:room\s*)?(\d{3})\s+(?:still\s+)?(?:empty|vacant|free|tidy|clean|ready|unoccupied)", low):
+        req.kind, req.room = "check", f"room-{m.group(1)}"
+    elif req.room and re.search(r"\b(?:check|inspect|verify)\b", low) and \
+            re.search(r"\b(?:empty|vacant|tidy|clean|ready|unoccupied)\b", low):
+        req.kind = "check"
+    elif req.room and re.search(r"\b(?:bags|luggage|suitcases?)\b", low):
+        req.kind = "luggage"
     elif req.room and any(w in low for w in ("noisy", "party", "shouting", "banging", "racket", "disturbance")):
         req.kind = "noise"
     elif any(w in low for w in ("slippery", "leak", "water on the floor")):
         req.kind = "spill"
-        f = re.search(r"floor\s*(\d)", low)
-        req.floor = int(f.group(1)) if f else (1 if "ground" in low else None)
+        req.floor = floor_in(low)
     elif m := re.search(r"\btray\b.*?\b(?:to|for)\s+(?:room\s*)?(\d{3})\b", low):
         req.kind, req.room = "tray", f"room-{m.group(1)}"
     elif (req.room or req.guest) and (m := re.search(
@@ -210,6 +240,10 @@ def _fallback(req: Request, body: str, low: str) -> None:
         req.kind, req.lost_item = "lost", m.group(1).strip()
         h = re.search(r"\b(?:maybe|probably|possibly|perhaps|somewhere|last seen)\b(.*)$", low)
         req.hint = h.group(1).strip(" .,") if h else None
+    elif (req.room or req.guest) and not is_guest_redirect(body) and (m := _BRING_ITEM.search(low)):
+        q = m.group(1) or "a"
+        req.kind = "deliver"
+        req.items = parse_items(m.group(2)) or {generic_item(m.group(2)): int(q) if q.isdigit() else NUMBERS.get(q, 1)}
     elif (req.room or req.guest) and (m := _GENERIC_ITEM.search(low)):
         item = generic_item(m.group(2))
         if item and item not in ("room", "help", "assistance", "someone", "robot", "word", "minute"):
