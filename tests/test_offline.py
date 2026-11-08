@@ -8,6 +8,7 @@ from pathlib import Path
 
 from nightshift import planner, policy
 from nightshift.agent import Agent
+from nightshift import agent as agent_mod
 from nightshift.planner import parse_message
 from nightshift.world import World, clock_sec
 
@@ -133,7 +134,7 @@ def test_owned_tray_and_luggage():
 def test_end_of_night_charging():
     a = Agent.__new__(Agent)
     a.clock = "01:00:00"
-    assert a.battery_limits() == (25.0, 60.0), "midt på natta: som før"
+    assert a.battery_limits() == (agent_mod.LOW_BATTERY, agent_mod.CHARGE_TO), "midt på natta: som før"
     a.clock = "05:30:00"
     low, target = a.battery_limits()
     assert low < 25 and target < 30, (low, target)
