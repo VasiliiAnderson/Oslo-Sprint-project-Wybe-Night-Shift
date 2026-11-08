@@ -37,6 +37,10 @@ MAX_RATE = _rate_env("NIGHTSHIFT_MAX_RATE", 22.0)  # kall/s for hele prosessen
 # Kall/s per skift (0 = av). Brukes når flere prosesser kjører samtidig (f.eks. to versjoner side om side):
 # 4 plasser x 5,5 holder totalen under grensen uansett hvordan skiftene er fordelt på prosessene.
 SHIFT_RATE = _rate_env("NIGHTSHIFT_SHIFT_RATE", 0.0)
+# Sekunder vi venter på nettet ved brudd (DNS/tilkobling/tidsavbrudd) før et kall gis opp. Spilltida står stille
+# mens vi venter, så det koster ingenting; et oppgitt kall kan derimot koste (en tapt report). 8. nov 09:32:
+# etter 25 min uten nett feilet hvert kall 4 ganger (~30 s) før det gikk – med gammel grense (~75 s) var vi nær.
+NET_PATIENCE = _rate_env("NIGHTSHIFT_NET_PATIENCE", 600.0)
 
 
 class SharedRateLimiter:
@@ -136,7 +140,9 @@ class NightShiftClient:
     def send(self, body: dict[str, Any]) -> dict[str, Any]:
         """Send en rå JSON-kommando og returner svaret som dict."""
         data: dict[str, Any] = {}
-        for attempt in range(self.max_retries + 1):
+        attempt = 0
+        net_down_since: float | None = None
+        while True:
             RATE.wait()
             wait = self.min_interval - (time.monotonic() - self._last_call)
             if wait > 0:
@@ -157,15 +163,26 @@ class NightShiftClient:
 
             if resp is not None and resp.status_code == 429:
                 RATE.too_fast()  # serveren avviste kallet; det er trygt å sende på nytt
+                attempt += 1
+                if attempt > self.max_retries:
+                    return data
                 continue
-            retryable = resp is None or resp.status_code in (500, 502, 503, 504)
-            if not retryable:
+            if resp is None:
+                # Nettbrudd: vent på nettet (inntil NET_PATIENCE) i stedet for å gi opp kallet.
+                now = time.monotonic()
+                net_down_since = net_down_since if net_down_since is not None else now
+                if now - net_down_since >= NET_PATIENCE:
+                    return data
+                time.sleep(min(2 ** min(attempt, 4), 15))
+                attempt += 1
+                continue
+            if resp.status_code not in (500, 502, 503, 504):
                 RATE.ok()
                 return data
-            if attempt == self.max_retries:
+            if attempt >= self.max_retries:
                 return data
             time.sleep(min(2**attempt, 10))
-        return data
+            attempt += 1
 
     def _log(self, body: dict, resp: dict, elapsed: float) -> None:
         entry = {
