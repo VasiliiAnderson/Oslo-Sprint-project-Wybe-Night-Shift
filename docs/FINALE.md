@@ -7,7 +7,7 @@ Agenten må kjøre helt selv: ingen styring for hånd.
 1. Siste versjon fra `smarter-orchestrator`: `git pull`, så `git log --oneline -1` (noter commit).
 2. Offline-tester: `.venv\Scripts\python.exe -m tests.test_offline` → «… tester OK».
    Endret koden etter siste øvingsrunde? Spill av kjente netter uten serverkall:
-   `.venv\Scripts\python.exe -m nightshift.replay --label final-kand` → «16 av 16 skift spilt av likt»
+   `.venv\Scripts\python.exe -m nightshift.replay --label finalkand3` → «16 av 16 skift spilt av likt»
    (avvik = endringen påvirker de nettene; første avvik viser hvor).
 3. Ingen egne øvingsskift igjen: `python -m nightshift.run_final` skal ikke kjøre noe sted.
    Ikke avslutt Hermans skift.
