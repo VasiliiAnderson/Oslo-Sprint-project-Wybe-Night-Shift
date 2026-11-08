@@ -1181,14 +1181,18 @@ class Agent:
             # Fasit-forsøk 8. nov: et nytt søl kan lande i en gang som er våt fra før (gammelt søl, flyttet skilt)
             # eller har skilt – da gir bare en NY plassering poeng («done» med skiltet som står: −30, 0 av 12).
             # Er alle andre ganger på etasjen sett tørre etter meldingen, ligger sølet i den eneste som er igjen
-            # (riktig 8 av 8). Flere mulige steder: et skilt vi flyttet innen 2 t før meldingen gir ny melding om
-            # samme søl – ta det som ble flyttet først (5 av 5; flyttet over 3 t før: 0 av 2). Ellers ærlig «failed».
+            # (riktig 10 av 10). Flere mulige steder, og ALLE er skilt vi flyttet innen 2 t før meldingen: ta det som ble
+            # flyttet først (2 av 2). Med andre typer ved siden av (skilt, gammel våt flekk) var det gjetting: seed 145
+            # bommet to ganger (−60). Ellers ærlig «failed».
             cands = [p for p in corridors if p not in covered
                      and not (self.w.dry_at.get(p, -1) >= since and p not in self.w.signed
                               and p not in self.w.wet_since)]
             if len(cands) > need - len(covered):
                 moved = [p for p in cands if p in self.w.reused
                          and since - RECOVER_WINDOW <= self.w.reused_at.get(p, -10**9) < since]
+                taken_after = [p for p in cands if p in self.w.reused and self.w.reused_at.get(p, -1) >= since]
+                if len(moved) + len(taken_after) < len(cands):
+                    moved = []
                 if not moved and "signedcand" in FEATURES:
                     # Ellers: gamle våte flekker (ikke flyttet av oss) var riktige 1 av 6, og skilt flyttet for lenge
                     # siden 0 av 2. Står det da bare igjen så mange skilt som vi mangler, ligger sølet under dem.
