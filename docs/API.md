@@ -130,12 +130,24 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
 - **Lading er lineær:** ~1,05 %/min uansett nivå. Lading mens oppdrag venter kostet bare ~7 poeng/natt.
 - **Fartsgrensen er per nøkkel** (alle skift samlet): nesten aldri 429 under 20 kall/s, <1 % ved 20–29, ~5 % over 30.
 
+## Søl og skilt (målt 8. nov natt)
+- **Søl kan ikke tørkes.** `use towel on <gang>` og `use towel` → «Nothing happens when the robot uses towel.»;
+  `done` uten skilt → «Noted.» og −30 (seed 7). Skilt er eneste måte, og det finnes 3.
+- Søl ligger **bare i ganger** (2175 av 2175 våte `look`), og meldingen er alltid «Someone mentioned a spill on floor N.»
+- Sølet kommer **aldri etter** meldingen (0 av 140 godkjente), men kan ligge der før: 2 av 140 var sett våte før
+  meldingen (16 min og 4 t). I ~20 % av meldingene der alle ganger var sett før og etter, dukket ingen ny våt flekk
+  opp – da er «vårt» søl et som allerede var vått (eller under et skilt). Feilede søl (~1 per natt): 48 av 50 hadde
+  skilt i hånda, men fant ikke noe nytt søl å dekke.
+
 ## Ukjent hotell (finalen: «scenarier ingen har sett før»)
 - Ganger og fellesrom var **like i alle 5278 looks** på alle øvingsseeder (bare rom og avstander varierer),
   så ett avvik fra lagret kart betyr nytt hotell (`World.known_hotel`). Da forkastes kartet og agenten utforsker.
 - `call_elevator floor=N` svarer «Ding. The doors open. Step in to elevator-N to ride to floor N.» – navnet på
   heisen i neste etasje. `look` i et trapperom viser trapperommet over/under (`"stairs": true`).
 - Uten lagret kart: v14 378 i snitt (fant ikke dører), v16 med utforsking 1804 (seed 3–9).
+- Med vogna går ikke trappa: en etasje som bare er sett fra trapperommet må nås med heisen (v27; v26 seed 25
+  fant ingen dør i 2. etasje hele natta). Et skift agenten slutter å spille står «live» og tar en øvingsplass til `end_shift`.
+- Uten kart, v26 på seed 29–45 (7 netter): bare ~20 poeng under samme seeder med kart.
 
 ## Poengmåling
 - Poeng finnes bare i `status` (ikke i svaret på `report`). «Noted. Thanks.» = riktig, «Noted.» = feil/ingenting.
@@ -151,7 +163,6 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
 
 ## Åpne spørsmål
 - Gir et udekket søl straff ved slutten av natta (relevant for flytting av skilt, v19)?
-- Kan søl tørkes (f.eks. `use towel on <gang>`)? Ikke testet ferdig: det fantes ikke håndkle i laundry på seed 7.
 - Hvor mye får plass i vogna (kan vi samle flere brett/bagasjer på én tur)?
 - Hva er riktig respons på «Do not disturb»-skilt?
 - «Mx X lost … earlier tonight»: nummereringen stemmer ikke alltid (seed 6, −75).
