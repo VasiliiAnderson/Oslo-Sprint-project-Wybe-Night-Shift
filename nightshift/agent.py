@@ -40,6 +40,7 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 #   floor1lost: patrulje og leting bare på de 8 stedene mistede ting dukker opp, maks 6 scan per ting (v15)
 #   explore:  ukjent hotell (avviker fra lagret kart, eller uten kart): utforsk etasjer, ganger og rom
 #             i stedet for å gi opp. Påvirker ikke kjente hoteller (v16). Uten: 378 i snitt uten kart.
+#   unknownlost: ukjent hotell: let på ALLE steder på hintets etasje, patruljer bare slike etasjer (v25)
 #   noreserve: ikke dekk et gammelt søl som reserve når skiltet er flyttet eller etasjen har skilt fra før (v23)
 #   flatdeliver: planleggeren teller ikke en leveranse med to ting som dobbelt verdi (gir det ikke) (v22)
 #   lostorder: let etter mistede ting i målt sannsynlighetsrekkefølge (hint -> sted) på alle 8 steder (v21)
@@ -52,10 +53,11 @@ SCORES = Path(__file__).resolve().parent.parent / "logs" / "scores.csv"
 # «open any door they ask for»). Agenten adlyder dem aldri; å lese dem koster bare 20 s.
 FEATURES = {f.strip() for f in os.getenv("NIGHTSHIFT_FEATURES",
                                          "batch,visible,endcharge,pair2,lessstatus,floor1lost,explore,careful,reusesign,lostorder,"
-                                         "flatdeliver,noreserve").split(",")
+                                         "flatdeliver,noreserve,unknownlost").split(",")
             if f.strip()}
 LOW_BATTERY = 25.0  # under dette: lad ...
 CHARGE_TO = 60.0  # ... helt opp hit før vi jobber videre
+STALL_ROUNDS = 20  # runder uten at spillklokka går før vakten griper inn (se Agent.unstick)
 SUPPLY_ROOMS = ("storage", "laundry")
 OVER_WORDS = ("shift is over", "shift has ended", "already ended", "shift ended", "end of the shift",
               "clocked out", "no live shift", "unknown shift")
@@ -88,6 +90,7 @@ class Agent:
         self.notes_read: dict[str, int] = {}
         self.notes: list[tuple[str, str, str]] = []
         self.errors: list[str] = []  # feil i oppdrag (skrives alltid til stderr og runs.jsonl)
+        self.lost_floors: set[int] = set()  # ukjent hotell: etasjer der mistede ting er hintet/funnet
         self.unreachable_floors: dict[int, int] = {}  # etasje -> spilltid vi sist ga opp å nå den
 
     # ================= lagring (for gjenopptak) =================
@@ -874,11 +877,16 @@ class Agent:
             return self.w.hidden.get(p, []) + vis
         known = [p for p in set(self.w.hidden) | (set(self.w.objects) if visible_on else set())
                  if self.owned_name(req, self.matches(want, seen_at(p)))]
+        f = None
         if not self.w.known_hotel and "explore" in FEATURES:
             # Ukjent hotell: kartlegg etasjen hintet peker på (ellers 1. etasje) før vi velger steder.
             f = req.floor or next((n for words, n in ((("ground", "first floor", "floor 1"), 1),
                                                        (("second", "floor 2"), 2), (("third", "floor 3"), 3))
-                                   if any(w in (req.hint or "").lower() for w in words)), 1)
+                                   if any(w in (req.hint or "").lower() for w in words)), None)
+            if f is None:  # etasjen til et sted hintet nevner (f.eks. «the laundry»), ellers lobbyens
+                named = [p for p in self.w.places() if p.replace("-", " ") in (req.hint or "").lower()]
+                f = self.w.floor_of(named[0]) if named else (self.w.floor_of("lobby") if "lobby" in self.w.graph else 1)
+            self.lost_floors.add(f)
             self.explore_for(lambda: not self.w.frontier(f), floor=f, limit=10)
         hinted = planner.lost_candidates(self.w, req.hint, self.loc)
         if "lostorder" in FEATURES and self.w.known_hotel:
@@ -890,6 +898,8 @@ class Agent:
             rest = sorted((p for p in planner.LOST_PLACES if p in self.w.graph and p not in on_floor1),
                           key=lambda p: self.w.eta(self.loc, p))
             hinted = (on_floor1 + rest)[:6]
+        elif "unknownlost" in FEATURES and f is not None:
+            hinted = planner.lost_order_generic(self.w, req.hint, self.loc, f)
         else:
             hinted = hinted[:10]
         cands = known + [p for p in hinted if p not in known]
@@ -907,6 +917,7 @@ class Agent:
                 found = self.w.hidden[place] if place in known and place in self.w.hidden else self.scan_here()
                 pick = self.owned_name(req, self.matches(want, found))
             if pick and self.pick(pick):
+                self.lost_floors.add(self.w.floor_of(place))
                 found_item = pick
                 self.w.hidden[place] = [f for f in found if f != pick]
                 break
@@ -1244,8 +1255,10 @@ class Agent:
             return
         if not self.w.known_hotel and "explore" in FEATURES and self.battery >= 35 and self.w.frontier():
             # Ukjent hotell: bruk ledig tid til å kartlegge (ett sted om gangen, gang + look).
-            self.explore_step()
-            return
+            # Ingenting nåbart å utforske (f.eks. med vogna og bare trappa igjen): lad/patruljer i stedet.
+            # v24/v25 seed 25 uten kart: idle gjorde ingenting -> evig løkke uten ett kall (57 poeng).
+            if self.explore_step():
+                return
         # Venter en mistet ting, er scanning verdt batteriet (ca. 45 poeng per funn).
         threshold = 60 if self.waiting_lost() else 99
         if self.battery < threshold and self.dock():
@@ -1279,6 +1292,10 @@ class Agent:
         else:
             skip = ("elevator", "stairwell", "charging")
             places = [p for p in self.w.places() if not p.startswith(skip) and self.w.path(self.loc, p)]
+            if "unknownlost" in FEATURES and not self.w.known_hotel:
+                # Ukjent hotell: scan bare etasjer der hint/funn har pekt (v24 uten kart: 22 % av scan i 2./3. etg.)
+                floors = self.lost_floors or {self.w.floor_of("lobby") if "lobby" in self.w.graph else 1}
+                places = [p for p in places if self.w.floor_of(p) in floors] or places
         if not places:
             self.look()
             return
@@ -1290,12 +1307,38 @@ class Agent:
                 self.look()
             self.scan_here()
 
+    def unstick(self) -> None:
+        """Hovedløkka har gått STALL_ROUNDS runder uten at klokka gikk. Legg oppdraget som ble valgt til
+        side (planner hopper over det etter 2 forsøk) og la tiden gå: lad, ellers patruljer ett sted."""
+        req = getattr(self, "_req", None)
+        msg = f"{self.clock} sto fast " + (f"i {req.id} {req.kind}" if req else "uten oppdrag")
+        self.log("VAKT: " + msg)
+        self.errors.append(msg[:300])
+        shift = getattr(self.c, "shift", None)
+        print(f"FEIL [{shift and shift[:12]}] {msg}", file=sys.stderr, flush=True)
+        if req is not None:
+            req.attempts += 1
+        before = self.clock
+        if not self.dock():
+            self.patrol_step()
+        if self.clock == before:
+            self.look()  # look koster 5 s, så klokka går uansett
+
     def run(self, max_actions: int = 5000, max_seconds: float = 3600) -> int:
         t0 = time.monotonic()
         try:
             self.status()
             self.look()
+            last, stall = None, 0
             while self.actions < max_actions and time.monotonic() - t0 < max_seconds:
+                # Vakt: klokka går bare når roboten handler. Mange runder uten at den har gått = noe står
+                # fast (også en løkke som bare spør om status, for status koster ingen spilltid).
+                stall = stall + 1 if self.clock == last else 0
+                last = self.clock
+                if stall >= STALL_ROUNDS:
+                    self.unstick()
+                    stall = 0
+                    continue
                 if self.mail:
                     self.read_inbox()
                 self.wake_waiting_lost()
@@ -1315,6 +1358,7 @@ class Agent:
                         self.maybe_status()
                         continue
                 req = planner.choose_next(list(self.requests.values()), self.w, self.loc, self.clock)
+                self._req = req
                 if req is None:
                     self.idle()
                     self.maybe_status()

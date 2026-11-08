@@ -396,6 +396,50 @@ def test_lost_order_hint_area_first():
     assert rest[0] == "lobby", "resten nærmest først (lobby ligger ved siden av baren)"
 
 
+def test_lost_order_unknown_hotel():
+    """Ukjent hotell: hintets steder først, så ALLE steder på etasjen (ikke bare ganger + lobby)."""
+    w = World()
+    order = planner.lost_order_generic(w, "the lobby bar", "charging-dock", 1)
+    assert order[:2] == ["lobby-bar", "lobby"], order
+    assert {"laundry", "kitchen-pass", "front-desk"} <= set(order), order
+    assert not any(p.startswith(("elevator", "stairwell", "charging")) for p in order), order
+    assert planner.lost_order_generic(w, "near the kitchen", "lobby", 1)[0] == "kitchen-pass"
+
+
+def test_idle_never_spins_without_a_call():
+    """v24/v25 seed 25 uten kart: med vogna var bare trappa igjen å utforske, idle gjorde ingenting
+    og hovedløkka gikk i 55 min uten ett kall. Nå: lad/patruljer, og vakten griper inn ved stillstand."""
+    from nightshift import agent as agent_mod
+    saved = set(agent_mod.FEATURES)
+    try:
+        agent_mod.FEATURES.add("explore")
+        hotel = FakeHotel()
+        a = Agent(hotel, World(use_prior=False), verbose=False)
+        a.look()
+        for p in ("lobby", "elevator-1", "lobby", "hall-1a", "storage", "hall-1a", "stairwell-1", "hall-1a"):
+            assert a.go_to(p), p
+            if p not in a.w.seen:
+                a.look()
+        a.cart, a.w.has_cart, a.battery = [], True, 90.0
+        assert a.w.frontier() and not a.explore_step(), "bare trappa igjen, og den kan ikke vogna ta"
+        before = a.actions
+        a.idle()
+        assert a.actions > before, "idle må gjøre noe (lade/patruljere), ellers står klokka"
+        # Vakten: en handler som aldri gjør et kall, skal ikke fryse natta.
+        a.requests.clear()
+        r = msg("107 wants a towel.")
+        a.requests[r.id] = r
+        orig = agent_mod.Agent.HANDLERS
+        agent_mod.Agent.HANDLERS = {**orig, "deliver": lambda self, req: None}
+        try:
+            a.run(max_actions=a.actions + 60, max_seconds=3)
+        finally:
+            agent_mod.Agent.HANDLERS = orig
+        assert r.attempts >= 2 and any("sto fast" in e for e in a.errors), (r.attempts, a.errors)
+    finally:
+        agent_mod.FEATURES.clear(); agent_mod.FEATURES.update(saved)
+
+
 def main() -> None:
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:

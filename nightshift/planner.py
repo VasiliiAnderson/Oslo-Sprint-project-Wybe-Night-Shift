@@ -314,6 +314,29 @@ def _hint_candidates(world, hint: str | None, near: str) -> list[str]:
     return sorted(cands, key=lambda p: world.eta(near, p))
 
 
+
+def lost_order_generic(world, hint: str | None, start: str, floor: int, limit: int = 12) -> list[str]:
+    """Ukjent hotell (v25): v24-prinsippet uten kjente stedsnavn. Steder hintet nevner først (hele navnet,
+    så første ord: «kitchen» -> kitchen-pass), så ALLE andre steder på etasjen som en nærmeste-nabo-tur.
+    Før tok vi bare ganger + lobby, og laundry/kjøkken/resepsjon ble aldri lett i (0,8 bom per natt)."""
+    h = (hint or "").lower()
+    words = set(re.findall(r"[a-z]+", h))
+    skip = ("elevator", "stairwell", "charging")
+    pool = [p for p in world.places(floor) if not p.startswith(skip)]
+    exact = [p for p in pool if re.search(r"\b" + re.escape(p.replace("-", " ")) + r"\b", h)]
+    # Lengste navn vinner: «the lobby bar» er lobby-bar, ikke lobby (lobby blir et delvis treff).
+    exact = [p for p in exact if not any(q != p and p.replace("-", " ") in q.replace("-", " ") for q in exact)]
+    partial = [p for p in pool if p not in exact and p.split("-")[0] in words]
+    order, here = [], start
+    for group in (exact, partial, [p for p in pool if p not in exact and p not in partial]):
+        left = list(group)
+        while left:
+            nxt = min(left, key=lambda pl: world.eta(here, pl))
+            order.append(nxt)
+            left.remove(nxt)
+            here = nxt
+    return order[:limit]
+
 # Målte poeng (done + Thanks) etter alder i minutter, fra nightshift.insights decay (61 skift).
 # Nesten full verdi de første ~15 min, så faller den brått.
 DECAY: dict[str, list[tuple[float, float]]] = {
