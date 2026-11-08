@@ -21,6 +21,16 @@ Agenten må kjøre helt selv: ingen styring for hånd.
 - Bruk prosjektets Python direkte. `uv run` kan plukke feil Python hvis `VIRTUAL_ENV` peker et annet sted
   (skjedde 7. nov: anaconda uten `httpx`).
 
+## Offisielle finaleregler (fra arrangøren, 8. nov)
+- Start med `start_shift` og `mode: "final"` – samme API og kommandoer som i øving.
+- Alle lag spiller de samme 10 hemmelige skiftene (i ulik rekkefølge). Ett forsøk per skift, ingen omstart.
+- Start alle 10 kl. 12:00, gjerne parallelt. Hvert skift har tak på 45 min, alt stopper 13:00, og et skift som
+  aldri startes gir 0.
+- **20 sekunder per handling:** er agenten tregere, står roboten stille og taper spilltid. `status` og `inbox`
+  nullstiller ikke klokka. v33: hver agent starter i det øyeblikket skiftet er opprettet (test: første kall
+  < 1 s, lengste pause mellom handlinger 0,9 s), og fartsgrensens pause etter 429 er maks 0,5 s.
+- Rangering: snittet av de 10 finaleskiftene, dårligste strøket. Resultater 13:05.
+
 ## Forventet nivå (finalekoden a4f02e5, nye seeds)
 - Med lagret kart: 2024 i snitt på 156 nye netter (seed 183–581; median 2026). Per natt varierer det
   ca. 1330–2590; rolige netter (45 oppdrag) gir få poeng uansett. Simulert finale (10 netter, dårligste
