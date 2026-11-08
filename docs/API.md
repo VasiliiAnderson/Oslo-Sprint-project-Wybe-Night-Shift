@@ -138,6 +138,10 @@ Testet uten treff (finnes ikke): undock, charge, open, close, unlock, wait, take
   meldingen (16 min og 4 t). I ~20 % av meldingene der alle ganger var sett før og etter, dukket ingen ny våt flekk
   opp – da er «vårt» søl et som allerede var vått (eller under et skilt). Feilede søl (~1 per natt): 48 av 50 hadde
   skilt i hånda, men fant ikke noe nytt søl å dekke.
+- **Fasit-forsøk** (samme natt spilt fram til agenten ga opp, så et annet valg; `$TEMP/probe_spill2.py`):
+  dekke en gammel våt flekk (75 min–3 t før meldingen) var riktig 1 av 5; `done` uten nytt skilt (sølet «under»
+  et skilt som står?) 0 av 12, også når skiltet ble satt 3 min før meldingen. Hver feil = −30.
+  Ærlig `failed` (0) er rett i disse tilfellene – behold noreserve.
 
 ## Ukjent hotell (finalen: «scenarier ingen har sett før»)
 - Ganger og fellesrom var **like i alle 5278 looks** på alle øvingsseeder (bare rom og avstander varierer),
